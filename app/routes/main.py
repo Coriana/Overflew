@@ -2,8 +2,11 @@ from flask import Blueprint, render_template, redirect, url_for, request, curren
 from flask_login import current_user
 from app.models.question import Question
 from app.models.answer import Answer
-from app.models.tag import Tag
+from app.models.comment import Comment
+from app.models.tag import Tag, QuestionTag
 from app.models.user import User
+from app.models.ai_personality import AIPersonality
+from app import db
 
 main_bp = Blueprint('main', __name__)
 
@@ -54,12 +57,32 @@ def search():
     if not query:
         return redirect(url_for('main.index'))
     
+    # Search for questions that match the query in title or body
     questions = Question.query.filter(
-        Question.title.ilike(f'%{query}%') | Question.body.ilike(f'%{query}%')
-    ).order_by(Question.created_at.desc()).paginate(
-        page=page, per_page=10, error_out=False)
+        Question.title.ilike(f'%{query}%') | 
+        Question.body.ilike(f'%{query}%')
+    ).order_by(Question.created_at.desc())
     
-    return render_template('main/search.html', questions=questions, query=query)
+    # Also search by tags
+    tag_questions = Question.query.join(
+        QuestionTag, Question.id == QuestionTag.question_id
+    ).join(
+        Tag, QuestionTag.tag_id == Tag.id
+    ).filter(
+        Tag.name.ilike(f'%{query}%')
+    )
+    
+    # Combine the queries
+    combined_questions = questions.union(tag_questions).order_by(Question.created_at.desc())
+    
+    # Paginate the results
+    paginated_questions = combined_questions.paginate(
+        page=page, per_page=10, error_out=False
+    )
+    
+    current_app.logger.info(f"Search query '{query}' found {paginated_questions.total} results")
+    
+    return render_template('main/search.html', questions=paginated_questions, query=query)
 
 
 @main_bp.route('/tags')
@@ -81,14 +104,16 @@ def tag(tag_name):
     
     # Get questions with this tag
     questions = Question.query.join(
-        Question.tags
-    ).filter_by(
-        tag_id=tag.id
-    ).order_by(
-        Question.created_at.desc()
-    ).paginate(
+        QuestionTag, Question.id == QuestionTag.question_id
+    ).join(
+        Tag, QuestionTag.tag_id == Tag.id
+    ).filter(
+        Tag.name == tag_name
+    ).order_by(Question.created_at.desc()).paginate(
         page=page, per_page=10, error_out=False
     )
+    
+    current_app.logger.info(f"Tag '{tag_name}' found {questions.total} questions")
     
     return render_template('main/tag.html', tag=tag, questions=questions)
 
@@ -141,13 +166,56 @@ def users():
                           ai_personalities=ai_personalities)
 
 
-@main_bp.route('/ai_community')
+@main_bp.route('/ai-community')
+@main_bp.route('/ai_community')  # Keep old route for backward compatibility
 def ai_community():
     page = request.args.get('page', 1, type=int)
-    ai_users = User.query.filter_by(is_ai=True).order_by(
-        User.reputation.desc()
-    ).paginate(
-        page=page, per_page=20, error_out=False
-    )
+    expertise = request.args.get('expertise', '')
+    knowledge_level = request.args.get('knowledge_level', '')
+    sort = request.args.get('sort', 'reputation')
     
-    return render_template('main/ai_community.html', ai_users=ai_users)
+    # Build query with AI users joined with their personalities
+    query = db.session.query(User, AIPersonality).join(
+        AIPersonality, User.ai_personality_id == AIPersonality.id
+    ).filter(User.is_ai == True)
+    
+    # Apply filters
+    if expertise:
+        query = query.filter(AIPersonality.expertise.ilike(f'%{expertise}%'))
+    
+    # Apply sorting
+    if sort == 'reputation':
+        query = query.order_by(User.reputation.desc())
+    elif sort == 'activity':
+        query = query.order_by(AIPersonality.activity_frequency.desc())
+    elif sort == 'newest':
+        query = query.order_by(User.created_at.desc())
+    
+    # Execute query and paginate
+    results = query.paginate(page=page, per_page=20, error_out=False)
+    
+    # Prepare data for template
+    ai_personalities = []
+    for user, personality in results.items:
+        # Get post count for this user using count() instead of length
+        answers_count = db.session.query(db.func.count(Answer.id)).filter(Answer.user_id == user.id).scalar() or 0
+        comments_count = db.session.query(db.func.count(Comment.id)).filter(Comment.user_id == user.id).scalar() or 0
+        post_count = answers_count + comments_count
+        
+        # Combine user and personality data
+        personality_data = {
+            'user': user,
+            'knowledge_level': 'Expert',  # Default, could be derived from helpfulness_level
+            'interaction_style': personality.interaction_style,
+            'expertise': personality.expertise,
+            'traits': personality.personality_traits,
+            'post_count': post_count
+        }
+        ai_personalities.append(personality_data)
+    
+    # Set up pagination
+    pagination = results
+    
+    return render_template('main/ai_community.html', 
+                          ai_personalities=ai_personalities,
+                          pagination=pagination)

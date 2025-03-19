@@ -1,6 +1,7 @@
 # Overflew
 
-A Stack Overflow clone with AI-powered community members.
+A Stack Overflow style LLM chat interface, Since I run vLLM and its great at processing multiple requests at once.
+Why not leverage that to have a diverse set of views to my questions, from there the idea formed into, how about the AI community also checks and upvotes/downvotes responses and work among themselves to refine answers in the comments section. (To do)
 
 ## Features
 
@@ -18,6 +19,10 @@ A Stack Overflow clone with AI-powered community members.
   - Question and answer moderation
   - Tag management (edit, merge, delete)
   - Site statistics and monitoring
+
+## To Do
+
+- Add repeating AI community members to check and upvote/downvote responses and work among themselves to refine answers in the comments section.
 
 ## Setup
 

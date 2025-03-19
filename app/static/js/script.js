@@ -63,8 +63,10 @@ function initializeVoteButtons() {
 function handleVote(e) {
     e.preventDefault();
     
-    if (!isUserAuthenticated()) {
-        window.location.href = loginUrl + '?next=' + window.location.pathname;
+    if (!window.appConfig.isAuthenticated) {
+        // Store current URL before redirecting
+        const currentUrl = window.location.pathname + window.location.search;
+        window.location.href = window.appConfig.loginUrl + '?next=' + encodeURIComponent(currentUrl);
         return;
     }
     
@@ -74,66 +76,86 @@ function handleVote(e) {
     const answerId = button.dataset.answerId || null;
     const commentId = button.dataset.commentId || null;
     
-    // Get the current vote status
+    // Get the vote count element
+    const voteCount = button.parentElement.querySelector('.vote-count');
     const upButton = button.parentElement.querySelector('.vote-button[data-vote-type="up"]');
     const downButton = button.parentElement.querySelector('.vote-button[data-vote-type="down"]');
-    let currentVote = 0;
     
-    if (upButton.classList.contains('upvoted')) {
-        currentVote = 1;
-    } else if (downButton.classList.contains('downvoted')) {
-        currentVote = -1;
-    }
+    // Check if clicking the same button
+    const isVoted = button.classList.contains('voted');
+    const newVoteType = isVoted ? 0 : voteType;  // Remove vote if clicking same button
     
-    // Calculate the new vote value
-    let newVote = voteType;
-    if (currentVote === voteType) {
-        // Clicking the same button again removes the vote
-        newVote = 0;
-    }
-    
-    // Send the vote to the server
+    // Send vote to server
     fetch('/api/vote', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
             'X-CSRFToken': getCsrfToken()
         },
         body: JSON.stringify({
-            vote_type: newVote,
+            vote_type: newVoteType,
             question_id: questionId,
             answer_id: answerId,
             comment_id: commentId
-        })
+        }),
+        credentials: 'same-origin'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
-            // Update the UI
-            updateVoteUI(button.parentElement, data.vote_type);
-            
-            // Update the vote count
-            const voteCount = button.parentElement.querySelector('.vote-count');
+            // Update vote count
             const currentCount = parseInt(voteCount.textContent);
-            let newCount = currentCount;
-            
-            if (data.vote_type === 1) {
-                // If it was previously downvoted, add 2
-                newCount = currentVote === -1 ? currentCount + 2 : currentCount + 1;
-            } else if (data.vote_type === -1) {
-                // If it was previously upvoted, subtract 2
-                newCount = currentVote === 1 ? currentCount - 2 : currentCount - 1;
+            if (isVoted) {
+                // Remove vote
+                voteCount.textContent = currentCount - voteType;
+                button.classList.remove('voted');
             } else {
-                // Vote was removed
-                newCount = currentVote === 1 ? currentCount - 1 : currentCount + 1;
+                // Add new vote
+                voteCount.textContent = currentCount + newVoteType;
+                // Remove voted class from both buttons
+                upButton.classList.remove('voted');
+                downButton.classList.remove('voted');
+                // Add voted class to clicked button
+                button.classList.add('voted');
             }
             
-            voteCount.textContent = newCount;
+            // Show success message
+            showNotification('success', 'Vote recorded successfully');
+        } else {
+            showNotification('error', data.error || 'Failed to record vote');
         }
     })
     .catch(error => {
-        console.error('Error voting:', error);
+        console.error('Error:', error);
+        showNotification('error', 'An error occurred while voting');
     });
+}
+
+// Show notification
+function showNotification(type, message) {
+    // Remove any existing notifications
+    document.querySelectorAll('.notification').forEach(n => n.remove());
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    // Add fade-out class after a delay
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        // Remove notification after animation
+        setTimeout(() => {
+            notification.remove();
+        }, 300);
+    }, 2700);
 }
 
 // Update vote UI based on vote type
@@ -142,20 +164,20 @@ function updateVoteUI(voteContainer, voteType) {
     const downButton = voteContainer.querySelector('.vote-button[data-vote-type="down"]');
     
     // Reset classes
-    upButton.classList.remove('upvoted');
-    downButton.classList.remove('downvoted');
+    upButton.classList.remove('voted');
+    downButton.classList.remove('voted');
     
     // Add the appropriate class based on the vote type
     if (voteType === 1) {
-        upButton.classList.add('upvoted');
+        upButton.classList.add('voted');
     } else if (voteType === -1) {
-        downButton.classList.add('downvoted');
+        downButton.classList.add('voted');
     }
 }
 
 // Check if the user is authenticated
 function isUserAuthenticated() {
-    return document.body.dataset.userAuthenticated === 'true';
+    return window.appConfig.isAuthenticated;
 }
 
 // Get CSRF token from meta tag
@@ -217,15 +239,22 @@ function handleAIResponseForm(e) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
             'X-CSRFToken': getCsrfToken()
         },
         body: JSON.stringify({
             content_type: contentType,
             content_id: contentId,
             personality_id: personalityId
-        })
+        }),
+        credentials: 'same-origin'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             // Hide the modal
@@ -237,14 +266,14 @@ function handleAIResponseForm(e) {
             addAIResponseToPage(contentType, contentId, data.response);
             
             // Display a success message
-            showAlert('success', 'AI response generated successfully!');
+            showNotification('success', 'AI response generated successfully!');
         } else {
-            showAlert('danger', data.error || 'Failed to generate AI response');
+            showNotification('error', data.error || 'Failed to generate AI response');
         }
     })
     .catch(error => {
         console.error('Error generating AI response:', error);
-        showAlert('danger', 'Failed to generate AI response');
+        showNotification('error', 'Failed to generate AI response');
     })
     .finally(() => {
         // Re-enable the submit button

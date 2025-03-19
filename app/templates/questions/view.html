@@ -29,11 +29,11 @@
         <!-- Voting column -->
         <div class="col-1">
             <div class="vote-buttons" id="question-vote-{{ question.id }}">
-                <button class="vote-button {{ 'upvoted' if current_user.is_authenticated and question.user_vote == 1 }}" data-vote-type="up" data-question-id="{{ question.id }}">
+                <button class="vote-button {{ 'voted' if current_user.is_authenticated and question.user_vote == 1 }}" data-vote-type="up" data-question-id="{{ question.id }}">
                     <i class="fa-solid fa-caret-up"></i>
                 </button>
                 <div class="vote-count">{{ question.score }}</div>
-                <button class="vote-button {{ 'downvoted' if current_user.is_authenticated and question.user_vote == -1 }}" data-vote-type="down" data-question-id="{{ question.id }}">
+                <button class="vote-button {{ 'voted' if current_user.is_authenticated and question.user_vote == -1 }}" data-vote-type="down" data-question-id="{{ question.id }}">
                     <i class="fa-solid fa-caret-down"></i>
                 </button>
             </div>
@@ -158,11 +158,11 @@
             <div class="row">
                 <div class="col-1">
                     <div class="vote-buttons" id="answer-vote-{{ answer.id }}">
-                        <button class="vote-button {{ 'upvoted' if current_user.is_authenticated and answer.user_vote == 1 }}" data-vote-type="up" data-answer-id="{{ answer.id }}">
+                        <button class="vote-button {{ 'voted' if current_user.is_authenticated and answer.user_vote == 1 }}" data-vote-type="up" data-answer-id="{{ answer.id }}">
                             <i class="fa-solid fa-caret-up"></i>
                         </button>
                         <div class="vote-count">{{ answer.score }}</div>
-                        <button class="vote-button {{ 'downvoted' if current_user.is_authenticated and answer.user_vote == -1 }}" data-vote-type="down" data-answer-id="{{ answer.id }}">
+                        <button class="vote-button {{ 'voted' if current_user.is_authenticated and answer.user_vote == -1 }}" data-vote-type="down" data-answer-id="{{ answer.id }}">
                             <i class="fa-solid fa-caret-down"></i>
                         </button>
                         {% if current_user.is_authenticated and current_user.id == question.author_id and not answer.is_accepted %}

@@ -194,14 +194,8 @@ def vote():
     
     # Update or create the vote
     if existing_vote:
-        if existing_vote.vote_type == vote_type:
-            # Remove vote if clicking the same button
-            db.session.delete(existing_vote)
-            db.session.commit()
-            return jsonify({'success': True, 'vote_type': 0})
-        else:
-            # Change vote
-            existing_vote.vote_type = vote_type
+        # Change vote
+        existing_vote.vote_type = vote_type
     else:
         # New vote
         new_vote = Vote(
@@ -213,17 +207,42 @@ def vote():
         )
         db.session.add(new_vote)
     
-    db.session.commit()
-    
-    # Trigger AI responses to the vote
-    if question_id:
-        from app.routes.questions import ai_respond_to_vote
-        ai_respond_to_vote(question_id, None, None, vote_type, current_user.id)
-    elif answer_id:
-        from app.routes.answers import ai_respond_to_vote
-        ai_respond_to_vote(None, answer_id, None, vote_type, current_user.id)
-    
-    return jsonify({'success': True, 'vote_type': vote_type})
+    try:
+        db.session.commit()
+        
+        # Update reputation for the content author
+        if question_id:
+            question = Question.query.get(question_id)
+            if question and question.user_id != current_user.id:
+                author = User.query.get(question.user_id)
+                if author:
+                    author.reputation += vote_type
+                    db.session.commit()
+        elif answer_id:
+            answer = Answer.query.get(answer_id)
+            if answer and answer.user_id != current_user.id:
+                author = User.query.get(answer.user_id)
+                if author:
+                    author.reputation += vote_type
+                    db.session.commit()
+        
+        # Trigger AI responses to the vote
+        if question_id:
+            from app.routes.questions import ai_respond_to_vote
+            ai_respond_to_vote(question_id, None, None, vote_type, current_user.id)
+        elif answer_id:
+            from app.routes.answers import ai_respond_to_vote
+            ai_respond_to_vote(None, answer_id, None, vote_type, current_user.id)
+        
+        return jsonify({
+            'success': True, 
+            'vote_type': vote_type,
+            'message': 'Vote processed successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error processing vote: {str(e)}")
+        return jsonify({'error': 'Failed to process vote'}), 500
 
 
 @api_bp.route('/comments/add', methods=['POST'])
