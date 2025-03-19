@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Manage AI Personalities - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action active">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('admin.new_ai_personality') }}" class="btn btn-primary">Create AI Personality</a>
+                    <a href="{{ url_for('admin.seed_ai_personalities') }}" class="btn btn-success">Seed AI Personalities</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>AI Personalities</h2>
+            <a href="{{ url_for('admin.new_ai_personality') }}" class="btn btn-primary">
+                <i class="fa-solid fa-plus"></i> Create New
+            </a>
+        </div>
+        
+        <!-- Search and Filter -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" action="{{ url_for('admin.ai_personalities') }}" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="search" class="form-label">Search</label>
+                        <input type="text" class="form-control" id="search" name="search" value="{{ request.args.get('search', '') }}" placeholder="Username or expertise...">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="knowledge_level" class="form-label">Knowledge Level</label>
+                        <select class="form-select" id="knowledge_level" name="knowledge_level">
+                            <option value="">All</option>
+                            <option value="beginner" {{ 'selected' if request.args.get('knowledge_level') == 'beginner' }}>Beginner</option>
+                            <option value="intermediate" {{ 'selected' if request.args.get('knowledge_level') == 'intermediate' }}>Intermediate</option>
+                            <option value="expert" {{ 'selected' if request.args.get('knowledge_level') == 'expert' }}>Expert</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sort" class="form-label">Sort By</label>
+                        <select class="form-select" id="sort" name="sort">
+                            <option value="username" {{ 'selected' if request.args.get('sort') == 'username' or not request.args.get('sort') }}>Username</option>
+                            <option value="created_at" {{ 'selected' if request.args.get('sort') == 'created_at' }}>Created Date</option>
+                            <option value="reputation" {{ 'selected' if request.args.get('sort') == 'reputation' }}>Reputation</option>
+                            <option value="activity" {{ 'selected' if request.args.get('sort') == 'activity' }}>Activity</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">Filter</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- AI Personalities List -->
+        {% if ai_personalities %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Associated User</th>
+                            <th>Expertise</th>
+                            <th>Activity Level</th>
+                            <th>Responses</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ai in ai_personalities %}
+                        <tr>
+                            <td>{{ ai.id }}</td>
+                            <td>{{ ai.name }}</td>
+                            <td>
+                                {% if ai.user %}
+                                    <a href="{{ url_for('auth.profile', username=ai.user.username) }}">{{ ai.user.username }}</a>
+                                {% else %}
+                                    <span class="text-muted">No user</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ ai.expertise|truncate(50) }}</td>
+                            <td>{{ (ai.activity_frequency * 100)|int }}%</td>
+                            <td>{{ ai.user.answers.count() if ai.user else 0 }}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="{{ url_for('admin.edit_ai_personality', personality_id=ai.id) }}" class="btn btn-sm btn-outline-primary" title="Edit AI Personality">
+                                        <i class="fa-solid fa-edit"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#deleteModal" 
+                                            data-ai-id="{{ ai.id }}" 
+                                            data-ai-name="{{ ai.name }}"
+                                            title="Delete AI Personality">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if pagination and pagination.pages > 1 %}
+                <nav aria-label="Page navigation" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.ai_personalities', page=pagination.prev_num, search=request.args.get('search', ''), knowledge_level=request.args.get('knowledge_level', ''), sort=request.args.get('sort', '')) }}">Previous</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Previous</span>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page %}
+                                {% if page == pagination.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin.ai_personalities', page=page, search=request.args.get('search', ''), knowledge_level=request.args.get('knowledge_level', ''), sort=request.args.get('sort', '')) }}">{{ page }}</a>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.ai_personalities', page=pagination.next_num, search=request.args.get('search', ''), knowledge_level=request.args.get('knowledge_level', ''), sort=request.args.get('sort', '')) }}">Next</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Next</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info">
+                No AI personalities found. <a href="{{ url_for('admin.new_ai_personality') }}">Create a new one</a> or <a href="{{ url_for('admin.seed_ai_personalities') }}">seed some predefined personalities</a>.
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Delete AI Personality</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the AI personality "<span id="personality-name"></span>"? This action cannot be undone and will delete all associated user data.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-form" action="{{ url_for('admin.delete_ai_personality', personality_id=0) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup delete modal
+        const deleteModal = document.getElementById('deleteModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const aiId = button.dataset.aiId;
+                const aiName = button.dataset.aiName;
+                
+                document.getElementById('personality-name').textContent = aiName;
+                const form = document.getElementById('delete-form');
+                form.action = form.action.replace('/0', '/' + aiId);
+            });
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if personality else 'Create' }} AI Personality - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">{{ 'Edit' if personality else 'Create' }} AI Personality</h2>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('admin.edit_ai_personality', personality_id=personality.id) if personality else url_for('admin.create_ai_personality') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <!-- Basic Information -->
+                    <h4 class="mb-3">Basic Information</h4>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" value="{{ personality.user.username if personality else '' }}" required {% if personality %}readonly{% endif %}>
+                            <small class="form-text text-muted">Username must be unique and will be visible to all users.</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" value="{{ personality.user.email if personality else '' }}" required {% if personality %}readonly{% endif %}>
+                            <small class="form-text text-muted">A unique email for this AI personality (not visible to users).</small>
+                        </div>
+                    </div>
+                    
+                    {% if not personality %}
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                            <small class="form-text text-muted">This is only used internally for the AI personality account.</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <label for="profile_image" class="form-label">Profile Image URL (Optional)</label>
+                        <input type="url" class="form-control" id="profile_image" name="profile_image" value="{{ personality.user.profile_image if personality and personality.user.profile_image else '' }}">
+                        <small class="form-text text-muted">URL to an image for this AI personality. If left blank, an auto-generated avatar will be used.</small>
+                    </div>
+                    
+                    <!-- Personality Traits -->
+                    <h4 class="mb-3 mt-4">Personality Details</h4>
+                    
+                    <div class="mb-3">
+                        <label for="expertise" class="form-label">Expertise</label>
+                        <input type="text" class="form-control" id="expertise" name="expertise" value="{{ personality.expertise if personality else '' }}" required>
+                        <small class="form-text text-muted">The primary areas of knowledge this AI personality specializes in (e.g., "Python, Machine Learning, Data Science").</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="traits" class="form-label">Character Traits</label>
+                        <input type="text" class="form-control" id="traits" name="traits" value="{{ personality.traits if personality else '' }}" required>
+                        <small class="form-text text-muted">Personality traits that define this AI's character (e.g., "Helpful, Patient, Detail-oriented").</small>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="knowledge_level" class="form-label">Knowledge Level</label>
+                            <select class="form-select" id="knowledge_level" name="knowledge_level" required>
+                                <option value="beginner" {{ 'selected' if personality and personality.knowledge_level == 'beginner' }}>Beginner</option>
+                                <option value="intermediate" {{ 'selected' if personality and personality.knowledge_level == 'intermediate' }}>Intermediate</option>
+                                <option value="expert" {{ 'selected' if personality and personality.knowledge_level == 'expert' else 'selected' }}>Expert</option>
+                            </select>
+                            <small class="form-text text-muted">The level of expertise this AI personality has in its field.</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="interaction_style" class="form-label">Interaction Style</label>
+                            <select class="form-select" id="interaction_style" name="interaction_style" required>
+                                <option value="formal" {{ 'selected' if personality and personality.interaction_style == 'formal' }}>Formal</option>
+                                <option value="friendly" {{ 'selected' if personality and personality.interaction_style == 'friendly' else 'selected' }}>Friendly</option>
+                                <option value="humorous" {{ 'selected' if personality and personality.interaction_style == 'humorous' }}>Humorous</option>
+                                <option value="direct" {{ 'selected' if personality and personality.interaction_style == 'direct' }}>Direct</option>
+                                <option value="academic" {{ 'selected' if personality and personality.interaction_style == 'academic' }}>Academic</option>
+                            </select>
+                            <small class="form-text text-muted">How this AI personality communicates with users.</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="bio" class="form-label">Bio</label>
+                        <textarea class="form-control" id="bio" name="bio" rows="3" required>{{ personality.user.bio if personality else '' }}</textarea>
+                        <small class="form-text text-muted">A brief description of this AI personality's background and expertise. This will be visible on their profile.</small>
+                    </div>
+                    
+                    <!-- AI Response Configuration -->
+                    <h4 class="mb-3 mt-4">Response Configuration</h4>
+                    
+                    <div class="mb-3">
+                        <label for="response_template" class="form-label">Response Template</label>
+                        <textarea class="form-control" id="response_template" name="response_template" rows="5">{{ personality.response_template if personality else 'As {traits}, I recommend considering {custom_content}' }}</textarea>
+                        <small class="form-text text-muted">A template for structuring this AI's responses. Use {traits}, {expertise}, and {custom_content} as placeholders.</small>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="vote_threshold" class="form-label">Vote Threshold</label>
+                            <input type="number" class="form-control" id="vote_threshold" name="vote_threshold" value="{{ personality.vote_threshold if personality else '5' }}" min="1" max="20" required>
+                            <small class="form-text text-muted">The score threshold at which this AI will decide to vote on content.</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="answer_threshold" class="form-label">Answer Threshold</label>
+                            <input type="number" class="form-control" id="answer_threshold" name="answer_threshold" value="{{ personality.answer_threshold if personality else '70' }}" min="1" max="100" required>
+                            <small class="form-text text-muted">The confidence threshold (%) at which this AI will decide to answer a question.</small>
+                        </div>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="is_active" name="is_active" {{ 'checked' if not personality or (personality and personality.is_active) else '' }}>
+                        <label class="form-check-label" for="is_active">
+                            Active
+                        </label>
+                        <small class="form-text text-muted d-block">If checked, this AI personality will be active and responsive on the platform.</small>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('admin.ai_personalities') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">{{ 'Update' if personality else 'Create' }} AI Personality</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

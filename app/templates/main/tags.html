@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Tags - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h2">Tags</h1>
+            <div>
+                <form class="d-flex" action="{{ url_for('main.tags') }}" method="get">
+                    <input class="form-control me-2" type="search" name="q" placeholder="Filter by tag name" value="{{ request.args.get('q', '') }}">
+                    <button class="btn btn-outline-primary" type="submit">Filter</button>
+                </form>
+            </div>
+        </div>
+        
+        <p class="lead">A tag is a keyword or label that categorizes your question with other, similar questions. Using the right tags makes it easier for others to find and answer your question.</p>
+        
+        <!-- Tags -->
+        {% if tags %}
+            <div class="row">
+                {% for tag in tags %}
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h5 class="card-title mb-0">
+                                        <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                                    </h5>
+                                    <span class="badge rounded-pill bg-secondary">{{ tag.questions.count() }}</span>
+                                </div>
+                                <p class="card-text small">
+                                    {% if tag.description %}
+                                        {{ tag.description|truncate(100) }}
+                                    {% else %}
+                                        <span class="text-muted">No description available.</span>
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <div class="card-footer bg-transparent">
+                                <small class="text-muted">
+                                    {{ tag.questions.count() }} question{{ 's' if tag.questions.count() != 1 }}
+                                    {% if tag.questions.filter(Question.created_at >= today).count() > 0 %}
+                                        • {{ tag.questions.filter(Question.created_at >= today).count() }} today
+                                    {% endif %}
+                                    {% if tag.questions.filter(Question.created_at >= week_start).count() > 0 %}
+                                        • {{ tag.questions.filter(Question.created_at >= week_start).count() }} this week
+                                    {% endif %}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            
+            <!-- Pagination -->
+            {% if pagination and pagination.pages > 1 %}
+                <nav aria-label="Page navigation" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('main.tags', page=pagination.prev_num, q=request.args.get('q', '')) }}">Previous</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Previous</span>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page %}
+                                {% if page == pagination.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('main.tags', page=page, q=request.args.get('q', '')) }}">{{ page }}</a>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('main.tags', page=pagination.next_num, q=request.args.get('q', '')) }}">Next</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Next</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info">
+                No tags found. Tags will be created when users ask questions.
+            </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Tag Stats</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Total Tags:</strong> {{ total_tags }}</p>
+                <p><strong>Popular Tags:</strong></p>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for tag in popular_tags %}
+                        <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">
+                            {{ tag.name }}
+                            <span class="badge rounded-pill bg-secondary">{{ tag.questions.count() }}</span>
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">About Tags</h5>
+            </div>
+            <div class="card-body">
+                <p>Tags help categorize questions and make them easier to find. Good tags are:</p>
+                <ul>
+                    <li>Specific and relevant to the question</li>
+                    <li>Using existing popular tags when possible</li>
+                    <li>Limited to 5 per question</li>
+                </ul>
+                <p>If you have enough reputation, you can also create new tags or edit tag descriptions.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

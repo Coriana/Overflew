@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Tag - Overflew Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action active">Tags</a>
+            <a href="{{ url_for('admin.settings') }}" class="list-group-item list-group-item-action">Settings</a>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Edit Tag</h2>
+            <a href="{{ url_for('admin.tags') }}" class="btn btn-outline-secondary">Back to Tags</a>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Tag Name</label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ tag.name }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3">{{ tag.description }}</textarea>
+                        <div class="form-text">Provide a clear explanation of when this tag should be used.</div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        <a href="{{ url_for('admin.merge_tags', source=tag.name) }}" class="btn btn-outline-secondary">Merge with Another Tag</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

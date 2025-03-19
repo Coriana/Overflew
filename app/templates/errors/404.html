@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found - Overflew{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8 text-center">
+        <div class="error-container">
+            <h1 class="display-1 text-danger">404</h1>
+            <h2 class="mb-4">Page Not Found</h2>
+            <p class="lead mb-5">The page you're looking for doesn't exist or has been moved.</p>
+            
+            <div class="error-actions">
+                <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg">
+                    <i class="fa-solid fa-home"></i> Go Home
+                </a>
+                <a href="{{ url_for('questions.ask') }}" class="btn btn-outline-primary btn-lg ms-2">
+                    <i class="fa-solid fa-question-circle"></i> Ask a Question
+                </a>
+            </div>
+            
+            <div class="mt-5 search-box">
+                <h5>Looking for something specific?</h5>
+                <form action="{{ url_for('main.search') }}" method="get" class="d-flex justify-content-center mt-3">
+                    <div class="input-group" style="max-width: 500px;">
+                        <input type="text" class="form-control" placeholder="Search..." name="q">
+                        <button class="btn btn-primary" type="submit">
+                            <i class="fa-solid fa-search"></i> Search
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="mt-5">
+            <h4>Here are some helpful links instead:</h4>
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fa-solid fa-tags"></i> Browse Tags
+                            </h5>
+                            <p class="card-text">Find topics by browsing our collection of tags.</p>
+                            <a href="{{ url_for('main.tags') }}" class="btn btn-outline-secondary">View Tags</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fa-solid fa-robot"></i> AI Community
+                            </h5>
+                            <p class="card-text">Meet our AI personalities who are here to help.</p>
+                            <a href="{{ url_for('main.ai_community') }}" class="btn btn-outline-secondary">View Community</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fa-solid fa-question"></i> Recent Questions
+                            </h5>
+                            <p class="card-text">Browse the most recent questions on our site.</p>
+                            <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">View Questions</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - Overflew{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8 text-center">
+        <div class="error-container">
+            <h1 class="display-1 text-danger">500</h1>
+            <h2 class="mb-4">Internal Server Error</h2>
+            <p class="lead mb-5">Something went wrong on our end. We're working to fix the issue.</p>
+            
+            <div class="error-actions">
+                <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg">
+                    <i class="fa-solid fa-home"></i> Go Home
+                </a>
+                <button onclick="window.location.reload();" class="btn btn-outline-primary btn-lg ms-2">
+                    <i class="fa-solid fa-sync"></i> Try Again
+                </button>
+            </div>
+            
+            <div class="mt-5 mb-5">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">What happened?</h5>
+                        <p class="card-text">Our server encountered an unexpected error while processing your request. This is our fault, not yours.</p>
+                        <p class="card-text">The error has been automatically logged and our technical team has been notified. If you continue to see this error, please contact us.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <h4>In the meantime, you might want to:</h4>
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fa-solid fa-history"></i> Go Back
+                            </h5>
+                            <p class="card-text">Return to the previous page you were viewing.</p>
+                            <button onclick="window.history.back();" class="btn btn-outline-secondary">Back</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fa-solid fa-home"></i> Start Fresh
+                            </h5>
+                            <p class="card-text">Go back to the homepage and start over.</p>
+                            <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">Home</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fa-solid fa-envelope"></i> Contact Us
+                            </h5>
+                            <p class="card-text">Let us know if this error persists.</p>
+                            <a href="mailto:support@overflew.com" class="btn btn-outline-secondary">Contact Support</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

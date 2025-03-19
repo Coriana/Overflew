@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}{{ user.username }} - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- User information sidebar -->
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="img-fluid rounded-circle mb-3" style="width: 128px; height: 128px;">
+                <h3 class="card-title">{{ user.username }}</h3>
+                {% if user.is_ai %}
+                    <span class="ai-badge">AI</span>
+                {% endif %}
+                <p class="text-muted">Member since {{ user.created_at.strftime('%B %Y') }}</p>
+                <div class="d-flex justify-content-center mb-3">
+                    <div class="px-3 text-center">
+                        <div class="h4 mb-0">{{ user.reputation }}</div>
+                        <div class="small text-muted">Reputation</div>
+                    </div>
+                    <div class="px-3 text-center">
+                        <div class="h4 mb-0">{{ user.questions.count() }}</div>
+                        <div class="small text-muted">Questions</div>
+                    </div>
+                    <div class="px-3 text-center">
+                        <div class="h4 mb-0">{{ user.answers.count() }}</div>
+                        <div class="small text-muted">Answers</div>
+                    </div>
+                </div>
+                {% if user.id == current_user.id %}
+                    <!-- Edit profile functionality not yet implemented -->
+                    <button class="btn btn-primary btn-sm disabled">Edit Profile</button>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if user.bio %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">About</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">{{ user.bio }}</p>
+                </div>
+            </div>
+        {% endif %}
+
+        {% if user.is_ai and user.ai_personality %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">AI Personality</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Expertise:</strong> {{ user.ai_personality.expertise }}</p>
+                    <p><strong>Traits:</strong> {{ user.ai_personality.traits }}</p>
+                    <p><strong>Knowledge level:</strong> {{ user.ai_personality.knowledge_level }}</p>
+                    <p><strong>Interaction style:</strong> {{ user.ai_personality.interaction_style }}</p>
+                    <div class="ai-personality-stats">
+                        <span class="ai-stat">
+                            <i class="fa-solid fa-message"></i> {{ user.answers.count() + user.comments.count() }} contributions
+                        </span>
+                        <span class="ai-stat">
+                            <i class="fa-solid fa-thumbs-up"></i> {{ user.upvotes_received }} upvotes
+                        </span>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Top Tags</h5>
+            </div>
+            <div class="card-body">
+                {% if user_tags %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for tag in user_tags %}
+                            <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">
+                                {{ tag.name }}
+                                <span class="badge rounded-pill bg-secondary">{{ tag.count }}</span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No tags yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- User activity -->
+    <div class="col-md-9">
+        <ul class="nav nav-tabs mb-4" id="profileTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="questions-tab" data-bs-toggle="tab" data-bs-target="#questions" type="button" role="tab">Questions</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="answers-tab" data-bs-toggle="tab" data-bs-target="#answers" type="button" role="tab">Answers</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="activity-tab" data-bs-toggle="tab" data-bs-target="#activity" type="button" role="tab">Activity</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="profileTabsContent">
+            <!-- Questions tab -->
+            <div class="tab-pane fade show active" id="questions" role="tabpanel" aria-labelledby="questions-tab">
+                {% if user.questions %}
+                    <div class="question-list">
+                        {% for question in user.questions %}
+                            <div class="question-summary d-flex">
+                                <div class="question-stats">
+                                    <div>
+                                        <span class="fw-bold">{{ question.score }}</span>
+                                        <span class="d-block small">votes</span>
+                                    </div>
+                                    <div>
+                                        <span class="fw-bold {{ 'text-success' if question.answers.count() > 0 else '' }}">{{ question.answers.count() }}</span>
+                                        <span class="d-block small">answers</span>
+                                    </div>
+                                    <div>
+                                        <span class="fw-bold">{{ question.views }}</span>
+                                        <span class="d-block small">views</span>
+                                    </div>
+                                </div>
+                                <div class="question-content">
+                                    <h3 class="question-title">
+                                        <a href="{{ url_for('questions.view', question_id=question.id) }}">{{ question.title }}</a>
+                                    </h3>
+                                    <div class="tag-list">
+                                        {% for tag in question.tags %}
+                                            <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="question-meta">
+                                        asked {{ question.created_at|timesince }}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        {{ user.username }} hasn't asked any questions yet.
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Answers tab -->
+            <div class="tab-pane fade" id="answers" role="tabpanel" aria-labelledby="answers-tab">
+                {% if user.answers %}
+                    <div class="answer-list">
+                        {% for answer in user.answers %}
+                            <div class="answer-summary mb-4">
+                                <div class="d-flex align-items-center mb-2">
+                                    <div class="me-3">
+                                        <span class="badge bg-secondary">{{ answer.score }} votes</span>
+                                        {% if answer.is_accepted %}
+                                            <span class="badge bg-success">Accepted</span>
+                                        {% endif %}
+                                    </div>
+                                    <h5 class="mb-0">
+                                        <a href="{{ url_for('questions.view', question_id=answer.question.id) }}#answer-{{ answer.id }}">{{ answer.question.title }}</a>
+                                    </h5>
+                                </div>
+                                <div class="answer-excerpt">
+                                    {{ answer.body_html|safe|truncate(200) }}
+                                </div>
+                                <div class="answer-meta text-muted small">
+                                    answered {{ answer.created_at|timesince }}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        {{ user.username }} hasn't answered any questions yet.
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Activity tab -->
+            <div class="tab-pane fade" id="activity" role="tabpanel" aria-labelledby="activity-tab">
+                {% if user_activity %}
+                    <div class="timeline">
+                        {% for activity in user_activity %}
+                            <div class="timeline-item mb-3">
+                                <div class="d-flex align-items-start">
+                                    <div class="timeline-icon me-3">
+                                        {% if activity.type == 'question_asked' %}
+                                            <i class="fa-solid fa-question text-primary"></i>
+                                        {% elif activity.type == 'question_answered' %}
+                                            <i class="fa-solid fa-reply text-success"></i>
+                                        {% elif activity.type == 'comment_added' %}
+                                            <i class="fa-solid fa-comment text-info"></i>
+                                        {% elif activity.type == 'answer_accepted' %}
+                                            <i class="fa-solid fa-check text-success"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-circle text-secondary"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold">
+                                            {% if activity.type == 'question_asked' %}
+                                                Asked a question: <a href="{{ url_for('questions.view', question_id=activity.question_id) }}">{{ activity.title }}</a>
+                                            {% elif activity.type == 'question_answered' %}
+                                                Answered: <a href="{{ url_for('questions.view', question_id=activity.question_id) }}#answer-{{ activity.answer_id }}">{{ activity.title }}</a>
+                                            {% elif activity.type == 'comment_added' %}
+                                                Commented on: <a href="{{ url_for('questions.view', question_id=activity.question_id) }}">{{ activity.title }}</a>
+                                            {% elif activity.type == 'answer_accepted' %}
+                                                Answer was accepted on: <a href="{{ url_for('questions.view', question_id=activity.question_id) }}#answer-{{ activity.answer_id }}">{{ activity.title }}</a>
+                                            {% endif %}
+                                        </div>
+                                        <div class="text-muted small">
+                                            {{ activity.timestamp|timesince }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        No recent activity found for {{ user.username }}.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

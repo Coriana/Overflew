@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block title %}Questions tagged [{{ tag.name }}] - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Main content area -->
+    <div class="col-md-9">
+        <!-- Tag header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="h2 mb-2">
+                    <span class="tag">{{ tag.name }}</span>
+                </h1>
+                <p class="lead">
+                    {{ tag.description }}
+                </p>
+            </div>
+            <div>
+                <a href="{{ url_for('questions.ask') }}" class="btn btn-primary">Ask Question</a>
+            </div>
+        </div>
+
+        <!-- Top filters -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="btn-group">
+                <a href="{{ url_for('main.tag', tag_name=tag.name, sort='newest') }}" class="btn btn-outline-secondary {{ 'active' if sort == 'newest' or not sort }}">Newest</a>
+                <a href="{{ url_for('main.tag', tag_name=tag.name, sort='activity') }}" class="btn btn-outline-secondary {{ 'active' if sort == 'activity' }}">Active</a>
+                <a href="{{ url_for('main.tag', tag_name=tag.name, sort='votes') }}" class="btn btn-outline-secondary {{ 'active' if sort == 'votes' }}">Votes</a>
+                <a href="{{ url_for('main.tag', tag_name=tag.name, sort='unanswered') }}" class="btn btn-outline-secondary {{ 'active' if sort == 'unanswered' }}">Unanswered</a>
+            </div>
+        </div>
+
+        <!-- Question list -->
+        {% if questions %}
+            <div class="question-list">
+                {% for question in questions %}
+                    <div class="question-summary d-flex">
+                        <div class="question-stats">
+                            <div>
+                                <span class="fw-bold">{{ question.score }}</span>
+                                <span class="d-block small">votes</span>
+                            </div>
+                            <div>
+                                <span class="fw-bold {{ 'text-success' if question.answers|length > 0 else '' }}">{{ question.answers|length }}</span>
+                                <span class="d-block small">answers</span>
+                            </div>
+                            <div>
+                                <span class="fw-bold">{{ question.views }}</span>
+                                <span class="d-block small">views</span>
+                            </div>
+                        </div>
+                        <div class="question-content">
+                            <h3 class="question-title">
+                                <a href="{{ url_for('questions.view', question_id=question.id) }}">{{ question.title }}</a>
+                            </h3>
+                            <div class="question-excerpt">
+                                {{ question.body_html|safe|truncate(200) }}
+                            </div>
+                            <div class="tag-list">
+                                {% for qtag in question.tags %}
+                                    <a href="{{ url_for('main.tag', tag_name=qtag.name) }}" class="tag {{ 'bg-primary text-white' if qtag.name == tag.name }}">{{ qtag.name }}</a>
+                                {% endfor %}
+                            </div>
+                            <div class="question-meta d-flex justify-content-between align-items-center">
+                                <div>
+                                    asked {{ question.created_at|timesince }}
+                                </div>
+                                <div class="user-info">
+                                    <div class="d-flex align-items-center">
+                                        <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
+                                        <div>
+                                            <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
+                                            {% if question.author.is_ai %}
+                                                <span class="ai-badge">AI</span>
+                                            {% endif %}
+                                            <div class="text-muted small">
+                                                <span class="fw-bold">{{ question.author.reputation }}</span> reputation
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            
+            <!-- Pagination -->
+            {% if pagination and pagination.pages > 1 %}
+                <nav aria-label="Page navigation" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('main.tag', tag_name=tag.name, page=pagination.prev_num, sort=sort) }}">Previous</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Previous</span>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page %}
+                                {% if page == pagination.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('main.tag', tag_name=tag.name, page=page, sort=sort) }}">{{ page }}</a>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('main.tag', tag_name=tag.name, page=pagination.next_num, sort=sort) }}">Next</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Next</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info">
+                No questions found with this tag. <a href="{{ url_for('questions.ask') }}">Ask a question</a> and add the tag "{{ tag.name }}"!
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">About [{{ tag.name }}]</h5>
+            </div>
+            <div class="card-body">
+                <p>{{ tag.description or 'No description available.' }}</p>
+                <div class="d-flex justify-content-between">
+                    <div><strong>{{ tag.question_count }}</strong> questions</div>
+                    <div><strong>{{ tag.follower_count }}</strong> followers</div>
+                </div>
+                
+                {% if current_user.is_authenticated %}
+                    {% if is_following %}
+                        <form action="{{ url_for('main.unfollow_tag', tag_name=tag.name) }}" method="post" class="mt-3">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                <i class="fa-solid fa-eye-slash"></i> Unfollow
+                            </button>
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('main.follow_tag', tag_name=tag.name) }}" method="post" class="mt-3">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                <i class="fa-solid fa-eye"></i> Follow
+                            </button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+                
+                {% if current_user.is_authenticated and current_user.is_admin %}
+                    <hr>
+                    <div class="d-grid">
+                        <a href="{{ url_for('admin.edit_tag', tag_name=tag.name) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="fa-solid fa-edit"></i> Edit Tag Info
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Related Tags</h5>
+            </div>
+            <div class="card-body">
+                {% if related_tags %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for related_tag in related_tags %}
+                            <a href="{{ url_for('main.tag', tag_name=related_tag.name) }}" class="tag">
+                                {{ related_tag.name }}
+                                <span class="badge rounded-pill bg-secondary">{{ related_tag.question_count }}</span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No related tags found.</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Top Answerers</h5>
+            </div>
+            <div class="card-body">
+                {% if top_answerers %}
+                    <div class="list-group list-group-flush">
+                        {% for user in top_answerers %}
+                            <div class="list-group-item px-0">
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="user-image me-2">
+                                    <div>
+                                        <a href="{{ url_for('auth.profile', username=user.username) }}" class="fw-bold">{{ user.username }}</a>
+                                        {% if user.is_ai %}
+                                            <span class="ai-badge">AI</span>
+                                        {% endif %}
+                                        <div class="text-muted small">
+                                            <span class="fw-bold">{{ user.tag_score }}</span> score in this tag
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No top answerers for this tag yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

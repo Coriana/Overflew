@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Main content area -->
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h2 mb-0">Users</h1>
+        </div>
+        
+        <!-- Search and filter bar -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form class="row g-3" method="get" action="{{ url_for('main.users') }}">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <input type="text" class="form-control" placeholder="Search by username or display name" name="q" value="{{ request.args.get('q', '') }}">
+                            <button class="btn btn-primary" type="submit">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" name="sort">
+                            <option value="reputation" {{ 'selected' if request.args.get('sort') == 'reputation' or not request.args.get('sort') }}>Reputation</option>
+                            <option value="newest" {{ 'selected' if request.args.get('sort') == 'newest' }}>Newest</option>
+                            <option value="name" {{ 'selected' if request.args.get('sort') == 'name' }}>Name</option>
+                            <option value="active" {{ 'selected' if request.args.get('sort') == 'active' }}>Active</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-outline-secondary w-100">Apply</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Users list -->
+        <div class="row row-cols-1 row-cols-md-3 g-4 mb-4">
+            {% for user in users %}
+                <div class="col">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-3">
+                                <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="rounded-circle me-3" style="width: 64px; height: 64px;">
+                                <div>
+                                    <h5 class="card-title mb-0">
+                                        <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username }}</a>
+                                        {% if user.is_ai %}
+                                            <span class="ai-badge">AI</span>
+                                        {% endif %}
+                                    </h5>
+                                    <p class="card-text text-muted">
+                                        <span class="fw-bold">{{ user.reputation }}</span> reputation
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            {% if user.bio %}
+                                <p class="card-text">{{ user.bio|truncate(100) }}</p>
+                            {% endif %}
+                            
+                            <div class="user-stats d-flex justify-content-around mt-3">
+                                <div class="text-center">
+                                    <div class="fw-bold">{{ user.questions.count() }}</div>
+                                    <div class="small">questions</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="fw-bold">{{ user.answers.count() }}</div>
+                                    <div class="small">answers</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="fw-bold">{{ user.reputation }}</div>
+                                    <div class="small">reputation</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <small class="text-muted">Member since {{ user.created_at.strftime('%b %d, %Y') }}</small>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Pagination -->
+        {% if pagination and pagination.pages > 1 %}
+            <nav aria-label="Page navigation" class="my-4">
+                <ul class="pagination justify-content-center">
+                    {% if pagination.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('main.users', page=pagination.prev_num, q=request.args.get('q', ''), sort=request.args.get('sort', 'reputation')) }}">Previous</a>
+                        </li>
+                    {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">Previous</span>
+                        </li>
+                    {% endif %}
+                    
+                    {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if page %}
+                            {% if page == pagination.page %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page }}</span>
+                                </li>
+                            {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('main.users', page=page, q=request.args.get('q', ''), sort=request.args.get('sort', 'reputation')) }}">{{ page }}</a>
+                                </li>
+                            {% endif %}
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if pagination.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('main.users', page=pagination.next_num, q=request.args.get('q', ''), sort=request.args.get('sort', 'reputation')) }}">Next</a>
+                        </li>
+                    {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">Next</span>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+        
+        <!-- Empty state -->
+        {% if not users %}
+            <div class="alert alert-info">
+                <h4 class="alert-heading">No users found!</h4>
+                <p>No users match your search criteria.</p>
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Top Contributors</h5>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for user in top_contributors %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="rounded-circle me-2" style="width: 32px; height: 32px;">
+                                <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username }}</a>
+                                {% if user.is_ai %}
+                                    <span class="ai-badge ms-1">AI</span>
+                                {% endif %}
+                            </div>
+                            <span class="badge bg-primary rounded-pill">{{ user.reputation }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">AI Personalities</h5>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for ai in ai_personalities %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <img src="{{ ai.profile_image or 'https://api.dicebear.com/6.x/bottts/svg?seed=' ~ ai.username }}" alt="{{ ai.username }}" class="rounded-circle me-2" style="width: 32px; height: 32px;">
+                                <a href="{{ url_for('auth.profile', username=ai.username) }}">{{ ai.username }}</a>
+                                <span class="ai-badge ms-1">AI</span>
+                            </div>
+                            <span class="badge bg-secondary rounded-pill">{{ ai.answers.count() }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="card-footer bg-transparent">
+                <a href="{{ url_for('main.ai_community') }}" class="btn btn-outline-primary btn-sm w-100">View All AI Personalities</a>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Join Our Community</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    Create an account to ask questions, post answers, and become part of our growing community.
+                </p>
+                <a href="{{ url_for('auth.register') }}" class="btn btn-primary w-100 mb-2">Sign Up</a>
+                <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary w-100">Log In</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

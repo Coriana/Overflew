@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block title %}Merge Tags - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action active">Tags</a>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Merge Tags</h2>
+            </div>
+            <div class="card-body">
+                <p class="alert alert-info">
+                    <i class="fa-solid fa-info-circle"></i> Merging tags will replace all instances of the source tag with the target tag. This action cannot be undone.
+                </p>
+                
+                <form method="post" action="{{ url_for('admin.merge_tags') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-5">
+                            <div class="mb-3">
+                                <label for="source_tag" class="form-label">Source Tag</label>
+                                <select class="form-select" id="source_tag" name="source_tag" required>
+                                    <option value="">Select source tag</option>
+                                    {% for tag in tags %}
+                                        <option value="{{ tag.name }}" {{ 'selected' if source == tag.name }}>
+                                            {{ tag.name }} ({{ tag.question_count }} questions)
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted">This tag will be removed and replaced with the target tag.</small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2 d-flex align-items-center justify-content-center">
+                            <i class="fa-solid fa-arrow-right fa-2x"></i>
+                        </div>
+                        
+                        <div class="col-md-5">
+                            <div class="mb-3">
+                                <label for="target_tag" class="form-label">Target Tag</label>
+                                <select class="form-select" id="target_tag" name="target_tag" required>
+                                    <option value="">Select target tag</option>
+                                    {% for tag in tags %}
+                                        <option value="{{ tag.name }}">
+                                            {{ tag.name }} ({{ tag.question_count }} questions)
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted">This tag will remain and replace all instances of the source tag.</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="merge_descriptions" name="merge_descriptions" checked>
+                        <label class="form-check-label" for="merge_descriptions">
+                            Merge tag descriptions and wiki content
+                        </label>
+                        <small class="d-block form-text text-muted">If checked, the content from the source tag will be combined with the target tag's content (if it doesn't already contain the same information).</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="confirm" name="confirm" required>
+                        <label class="form-check-label" for="confirm">
+                            I understand this action cannot be undone
+                        </label>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('admin.tags') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Merge Tags</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Preview Section -->
+        <div id="preview-section" class="card mt-4 d-none">
+            <div class="card-header">
+                <h3 class="card-title">Merge Preview</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>Source Tag</h5>
+                            </div>
+                            <div class="card-body">
+                                <h4 id="source-name" class="mb-3"></h4>
+                                <p><strong>Questions:</strong> <span id="source-questions"></span></p>
+                                <p><strong>Description:</strong> <span id="source-description"></span></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h5>Target Tag</h5>
+                            </div>
+                            <div class="card-body">
+                                <h4 id="target-name" class="mb-3"></h4>
+                                <p><strong>Questions:</strong> <span id="target-questions"></span></p>
+                                <p><strong>Description:</strong> <span id="target-description"></span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning mt-4">
+                    <h5 class="alert-heading">After merge:</h5>
+                    <p><span id="source-name-after"></span> will be completely removed and replaced with <span id="target-name-after"></span> on <span id="affected-questions"></span> questions.</p>
+                    <p>A total of <span id="total-questions-after"></span> questions will have the tag <span id="target-name-final"></span>.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Select2 for tag selectors if available
+        if (typeof $.fn.select2 !== 'undefined') {
+            $('#source_tag, #target_tag').select2({
+                placeholder: 'Select a tag',
+                allowClear: true
+            });
+        }
+        
+        // Prevent selecting the same tag for source and target
+        const sourceTag = document.getElementById('source_tag');
+        const targetTag = document.getElementById('target_tag');
+        
+        function updateTargetOptions() {
+            const sourceValue = sourceTag.value;
+            
+            // Enable all options in target select
+            Array.from(targetTag.options).forEach(option => {
+                option.disabled = false;
+            });
+            
+            // Disable the option in target select that matches source
+            if (sourceValue) {
+                const matchingOption = Array.from(targetTag.options).find(
+                    option => option.value === sourceValue
+                );
+                if (matchingOption) {
+                    matchingOption.disabled = true;
+                }
+                
+                // If the currently selected target is now disabled, clear selection
+                if (targetTag.value === sourceValue) {
+                    targetTag.value = '';
+                    if (typeof $.fn.select2 !== 'undefined') {
+                        $(targetTag).trigger('change');
+                    }
+                }
+            }
+        }
+        
+        sourceTag.addEventListener('change', updateTargetOptions);
+        
+        // Initialize on page load
+        updateTargetOptions();
+        
+        // Show preview when both tags are selected
+        function updatePreview() {
+            const sourceValue = sourceTag.value;
+            const targetValue = targetTag.value;
+            
+            if (sourceValue && targetValue) {
+                // Get the tag details from the option text
+                const sourceText = sourceTag.options[sourceTag.selectedIndex].text;
+                const targetText = targetTag.options[targetTag.selectedIndex].text;
+                
+                // Parse question counts
+                const sourceQuestions = parseInt(sourceText.match(/\((\d+) questions\)/)[1]);
+                const targetQuestions = parseInt(targetText.match(/\((\d+) questions\)/)[1]);
+                
+                // Update preview
+                document.getElementById('source-name').textContent = sourceValue;
+                document.getElementById('source-questions').textContent = sourceQuestions;
+                document.getElementById('source-description').textContent = 'Description for ' + sourceValue;
+                
+                document.getElementById('target-name').textContent = targetValue;
+                document.getElementById('target-questions').textContent = targetQuestions;
+                document.getElementById('target-description').textContent = 'Description for ' + targetValue;
+                
+                document.getElementById('source-name-after').textContent = sourceValue;
+                document.getElementById('target-name-after').textContent = targetValue;
+                document.getElementById('affected-questions').textContent = sourceQuestions;
+                document.getElementById('total-questions-after').textContent = sourceQuestions + targetQuestions;
+                document.getElementById('target-name-final').textContent = targetValue;
+                
+                // Show preview section
+                document.getElementById('preview-section').classList.remove('d-none');
+            } else {
+                document.getElementById('preview-section').classList.add('d-none');
+            }
+        }
+        
+        sourceTag.addEventListener('change', updatePreview);
+        targetTag.addEventListener('change', updatePreview);
+        
+        // Update on page load if both are already selected
+        if (sourceTag.value && targetTag.value) {
+            updatePreview();
+        }
+    });
+</script>
+{% endblock %}

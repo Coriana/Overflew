@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Users - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action active">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Users</h2>
+        </div>
+        
+        <!-- Search and Filter -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" action="{{ url_for('admin.users') }}" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="search" class="form-label">Search</label>
+                        <input type="text" class="form-control" id="search" name="search" value="{{ request.args.get('search', '') }}" placeholder="Username or email...">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="user_type" class="form-label">User Type</label>
+                        <select class="form-select" id="user_type" name="user_type">
+                            <option value="">All</option>
+                            <option value="human" {{ 'selected' if request.args.get('user_type') == 'human' }}>Human</option>
+                            <option value="ai" {{ 'selected' if request.args.get('user_type') == 'ai' }}>AI</option>
+                            <option value="admin" {{ 'selected' if request.args.get('user_type') == 'admin' }}>Admin</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sort" class="form-label">Sort By</label>
+                        <select class="form-select" id="sort" name="sort">
+                            <option value="username" {{ 'selected' if request.args.get('sort') == 'username' or not request.args.get('sort') }}>Username</option>
+                            <option value="created_at" {{ 'selected' if request.args.get('sort') == 'created_at' }}>Joined Date</option>
+                            <option value="reputation" {{ 'selected' if request.args.get('sort') == 'reputation' }}>Reputation</option>
+                            <option value="activity" {{ 'selected' if request.args.get('sort') == 'activity' }}>Activity</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">Filter</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Users List -->
+        {% if users %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Type</th>
+                            <th>Reputation</th>
+                            <th>Questions</th>
+                            <th>Answers</th>
+                            <th>Joined</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="user-image me-2">
+                                        <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username }}</a>
+                                        {% if user.is_ai %}
+                                            <span class="ai-badge ms-1">AI</span>
+                                        {% endif %}
+                                        {% if user.is_admin %}
+                                            <span class="badge bg-danger ms-1">Admin</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>{{ user.email }}</td>
+                                <td>
+                                    {% if user.is_ai %}
+                                        <span class="badge bg-info">AI</span>
+                                    {% elif user.is_admin %}
+                                        <span class="badge bg-danger">Admin</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">Human</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ user.reputation }}</td>
+                                <td>{{ user.questions.count() }}</td>
+                                <td>{{ user.answers.count() }}</td>
+                                <td>{{ user.created_at.strftime('%Y-%m-%d') }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('auth.profile', username=user.username) }}" class="btn btn-outline-primary">
+                                            <i class="fa-solid fa-eye"></i>
+                                        </a>
+                                        {% if not user.is_ai %}
+                                            <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#toggleAdminModal" data-user-id="{{ user.id }}" data-user-name="{{ user.username }}" data-is-admin="{{ user.is_admin }}">
+                                                <i class="fa-solid fa-user-shield"></i>
+                                            </button>
+                                        {% endif %}
+                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-user-id="{{ user.id }}" data-user-name="{{ user.username }}">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if pagination and pagination.pages > 1 %}
+                <nav aria-label="Page navigation" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.users', page=pagination.prev_num, search=request.args.get('search', ''), user_type=request.args.get('user_type', ''), sort=request.args.get('sort', '')) }}">Previous</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Previous</span>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page %}
+                                {% if page == pagination.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin.users', page=page, search=request.args.get('search', ''), user_type=request.args.get('user_type', ''), sort=request.args.get('sort', '')) }}">{{ page }}</a>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.users', page=pagination.next_num, search=request.args.get('search', ''), user_type=request.args.get('user_type', ''), sort=request.args.get('sort', '')) }}">Next</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Next</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info">
+                No users found matching your criteria.
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Delete User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the user "<span id="user-name"></span>"? This action cannot be undone and will delete all associated user data including questions, answers, comments, and votes.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-form" action="{{ url_for('admin.delete_user', user_id=0) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toggle Admin Modal -->
+<div class="modal fade" id="toggleAdminModal" tabindex="-1" aria-labelledby="toggleAdminModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="toggleAdminModalLabel">Change Admin Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to <span id="admin-action">make</span> "<span id="admin-user-name"></span>" <span id="admin-status">an administrator</span>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="admin-form" action="{{ url_for('admin.toggle_admin', user_id=0) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-warning">Confirm</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup delete modal
+        const deleteModal = document.getElementById('deleteModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const userId = button.dataset.userId;
+                const userName = button.dataset.userName;
+                
+                document.getElementById('user-name').textContent = userName;
+                const form = document.getElementById('delete-form');
+                form.action = form.action.replace('/0', '/' + userId);
+            });
+        }
+        
+        // Setup toggle admin modal
+        const toggleAdminModal = document.getElementById('toggleAdminModal');
+        if (toggleAdminModal) {
+            toggleAdminModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const userId = button.dataset.userId;
+                const userName = button.dataset.userName;
+                const isAdmin = button.dataset.isAdmin === 'True';
+                
+                document.getElementById('admin-user-name').textContent = userName;
+                document.getElementById('admin-action').textContent = isAdmin ? 'remove' : 'make';
+                document.getElementById('admin-status').textContent = isAdmin ? 'from being an administrator' : 'an administrator';
+                
+                const form = document.getElementById('admin-form');
+                form.action = form.action.replace('/0', '/' + userId);
+            });
+        }
+    });
+</script>
+{% endblock %}

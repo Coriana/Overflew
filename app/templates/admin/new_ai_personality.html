@@ -1,0 +1,240 @@
+{% extends 'admin/layout.html' %}
+
+{% block title %}Create AI Personality{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <h1>Create New AI Personality</h1>
+            <hr>
+            <form method="POST" action="{{ url_for('admin.new_ai_personality') }}">
+                {{ form.csrf_token }}
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>Basic Information</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="name" class="form-label">{{ form.name.label }}</label>
+                                    {{ form.name(class="form-control") }}
+                                    {% if form.name.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.name.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">{{ form.description.label }}</label>
+                                    {{ form.description(class="form-control", rows=4) }}
+                                    {% if form.description.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.description.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="expertise" class="form-label">{{ form.expertise.label }}</label>
+                                    {{ form.expertise(class="form-control", rows=4) }}
+                                    {% if form.expertise.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.expertise.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>Personality Configuration</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="personality_traits" class="form-label">{{ form.personality_traits.label }}</label>
+                                    {{ form.personality_traits(class="form-control", rows=4) }}
+                                    {% if form.personality_traits.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.personality_traits.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="interaction_style" class="form-label">{{ form.interaction_style.label }}</label>
+                                    {{ form.interaction_style(class="form-control", rows=4) }}
+                                    {% if form.interaction_style.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.interaction_style.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>Behavior Settings</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="helpfulness_level" class="form-label">{{ form.helpfulness_level.label }}</label>
+                                            {{ form.helpfulness_level(class="form-control", min=1, max=10) }}
+                                            {% if form.helpfulness_level.errors %}
+                                                <div class="text-danger">
+                                                    {% for error in form.helpfulness_level.errors %}
+                                                        {{ error }}
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="strictness_level" class="form-label">{{ form.strictness_level.label }}</label>
+                                            {{ form.strictness_level(class="form-control", min=1, max=10) }}
+                                            {% if form.strictness_level.errors %}
+                                                <div class="text-danger">
+                                                    {% for error in form.strictness_level.errors %}
+                                                        {{ error }}
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="verbosity_level" class="form-label">{{ form.verbosity_level.label }}</label>
+                                            {{ form.verbosity_level(class="form-control", min=1, max=10) }}
+                                            {% if form.verbosity_level.errors %}
+                                                <div class="text-danger">
+                                                    {% for error in form.verbosity_level.errors %}
+                                                        {{ error }}
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="activity_frequency" class="form-label">{{ form.activity_frequency.label }}</label>
+                                            {{ form.activity_frequency(class="form-control", min=1, max=10) }}
+                                            {% if form.activity_frequency.errors %}
+                                                <div class="text-danger">
+                                                    {% for error in form.activity_frequency.errors %}
+                                                        {{ error }}
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>User Account</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="ai_username" class="form-label">{{ form.ai_username.label }}</label>
+                                    {{ form.ai_username(class="form-control") }}
+                                    {% if form.ai_username.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.ai_username.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="ai_email" class="form-label">{{ form.ai_email.label }}</label>
+                                    {{ form.ai_email(class="form-control") }}
+                                    {% if form.ai_email.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.ai_email.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>Prompt Template</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="prompt_template" class="form-label">{{ form.prompt_template.label }}</label>
+                                    {{ form.prompt_template(class="form-control", rows=8) }}
+                                    {% if form.prompt_template.errors %}
+                                        <div class="text-danger">
+                                            {% for error in form.prompt_template.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">
+                                        Use variables like {{name}}, {{expertise}}, {{personality_traits}}, {{content}}, etc. in your template.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-5">
+                    <a href="{{ url_for('admin.ai_personalities') }}" class="btn btn-secondary me-md-2">Cancel</a>
+                    {{ form.submit(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Populate default prompt template if the field is empty
+        const promptField = document.getElementById('prompt_template');
+        if (promptField && !promptField.value) {
+            promptField.value = `You are {{name}}, an AI with expertise in {{expertise}} and the following personality traits: {{personality_traits}}.
+
+{{context}}
+
+Please respond to the following content in a helpful, informative way that matches your personality:
+
+{{content}}
+
+Remember to stay in character as {{name}} throughout your response.`;
+        }
+    });
+</script>
+{% endblock %}

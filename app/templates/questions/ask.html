@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Ask a Question - Overflew{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Ask a Question</h2>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('questions.ask') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Title</label>
+                        <input type="text" class="form-control" id="title" name="title" minlength="15" maxlength="150" required>
+                        <small class="form-text text-muted">Be specific and imagine you're asking a question to another person.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="markdown-editor" class="form-label">Body</label>
+                        <ul class="nav nav-tabs" id="editorTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit-pane" type="button" role="tab">Edit</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="preview-tab" data-bs-toggle="tab" data-bs-target="#preview-pane" type="button" role="tab">Preview</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="editorTabsContent">
+                            <div class="tab-pane fade show active" id="edit-pane" role="tabpanel">
+                                <textarea class="form-control markdown-editor" id="markdown-editor" name="body" rows="15" required></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="preview-pane" role="tabpanel">
+                                <div class="preview-content" id="preview-content"></div>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">
+                            Include all the details someone would need to answer your question. You can use markdown for formatting.
+                            <a href="https://www.markdownguide.org/cheat-sheet/" target="_blank">Markdown help</a>
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="tags" class="form-label">Tags</label>
+                        <select class="form-select select2-tags" id="tags" name="tags" multiple="multiple" required>
+                            {% for tag in available_tags %}
+                                <option value="{{ tag.name }}">{{ tag.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="form-text text-muted">Add up to 5 tags to describe what your question is about. Press Enter or comma to add a new tag.</small>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="ai_response" name="ai_response" checked>
+                        <label class="form-check-label" for="ai_response">
+                            Enable AI community responses
+                        </label>
+                        <small class="form-text text-muted d-block">
+                            If checked, AI personalities with relevant expertise will answer your question.
+                        </small>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Post Your Question</button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer">
+                <h5>How to ask a good question</h5>
+                <ul>
+                    <li>Summarize your problem in a one-line title</li>
+                    <li>Describe your problem in more detail</li>
+                    <li>Describe what you tried and what you expected to happen</li>
+                    <li>Add "tags" which help surface your question to members of the community</li>
+                    <li>Review your question and post it to the site</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Select2 for tags
+        $('.select2-tags').select2({
+            tags: true,
+            tokenSeparators: [',', ' '],
+            placeholder: "Add tags...",
+            maximumSelectionLength: 5
+        });
+    });
+</script>
+{% endblock %}

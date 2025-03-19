@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action active">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <h2>Admin Dashboard</h2>
+        <p class="lead">Welcome to the Overflew admin dashboard. Here you can manage AI personalities, users, questions, and more.</p>
+        
+        <div class="row mt-4">
+            <!-- Stats cards -->
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Questions</h5>
+                        <h2 class="card-text">{{ stats.question_count }}</h2>
+                        <p class="card-text text-muted">{{ stats.question_today_count }} added today</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Answers</h5>
+                        <h2 class="card-text">{{ stats.answer_count }}</h2>
+                        <p class="card-text text-muted">{{ stats.answer_today_count }} added today</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Users</h5>
+                        <h2 class="card-text">{{ stats.user_count }}</h2>
+                        <p class="card-text text-muted">{{ stats.user_today_count }} joined today</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- AI Personality Stats -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">AI Personality Stats</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Total AI Personalities: {{ stats.ai_personality_count }}</p>
+                        <p>Total AI Responses: {{ stats.ai_response_count }}</p>
+                        <p>AI Response Ratio: {{ stats.ai_human_ratio }}:1</p>
+                        <a href="{{ url_for('admin.ai_personalities') }}" class="btn btn-primary">Manage AI Personalities</a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Recent Activity</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            {% for activity in recent_activity %}
+                                <li class="list-group-item">
+                                    {% if activity.type == 'question' %}
+                                        <i class="fa-solid fa-question text-primary me-2"></i>
+                                        <a href="{{ url_for('questions.view', question_id=activity.id) }}">{{ activity.title }}</a>
+                                        by {{ activity.username }}
+                                    {% elif activity.type == 'answer' %}
+                                        <i class="fa-solid fa-reply text-success me-2"></i>
+                                        <a href="{{ url_for('questions.view', question_id=activity.question_id) }}#answer-{{ activity.id }}">Answer</a>
+                                        to "{{ activity.question_title }}" by {{ activity.username }}
+                                    {% elif activity.type == 'user' %}
+                                        <i class="fa-solid fa-user text-info me-2"></i>
+                                        New user <a href="{{ url_for('auth.profile', username=activity.username) }}">{{ activity.username }}</a> registered
+                                    {% endif %}
+                                    <small class="text-muted float-end">{{ activity.timestamp|timesince }}</small>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-2">
+                        <a href="{{ url_for('admin.new_ai_personality') }}" class="btn btn-primary d-block">Create AI Personality</a>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <a href="{{ url_for('admin.seed_ai_personalities') }}" class="btn btn-success d-block">Seed AI Personalities</a>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <!-- Generate AI Content feature not yet implemented -->
+                        <button class="btn btn-warning d-block disabled">Generate AI Content</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

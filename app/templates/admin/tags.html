@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Tags - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action active">Tags</a>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <!-- Create Tag feature not yet implemented -->
+                    <button class="btn btn-primary disabled">Create Tag</button>
+                    <!-- Merge Tags feature not yet implemented -->
+                    <button class="btn btn-success disabled">Merge Tags</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Tags</h2>
+            <!-- Create Tag feature not yet implemented -->
+            <button class="btn btn-primary disabled">
+                <i class="fa-solid fa-plus"></i> Create New
+            </button>
+        </div>
+        
+        <!-- Search and Filter -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" action="{{ url_for('admin.tags') }}" class="row g-3">
+                    <div class="col-md-6">
+                        <label for="search" class="form-label">Search</label>
+                        <input type="text" class="form-control" id="search" name="search" value="{{ request.args.get('search', '') }}" placeholder="Tag name...">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="sort" class="form-label">Sort By</label>
+                        <select class="form-select" id="sort" name="sort">
+                            <option value="name" {{ 'selected' if request.args.get('sort') == 'name' or not request.args.get('sort') }}>Name</option>
+                            <option value="count" {{ 'selected' if request.args.get('sort') == 'count' }}>Question Count</option>
+                            <option value="created_at" {{ 'selected' if request.args.get('sort') == 'created_at' }}>Created Date</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">Filter</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Tags List -->
+        {% if tags %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Questions</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tag in tags %}
+                            <tr>
+                                <td>
+                                    <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                                </td>
+                                <td>
+                                    {{ tag.description|truncate(50) if tag.description else 'No description' }}
+                                </td>
+                                <td>{{ tag.question_count }}</td>
+                                <td>{{ tag.created_at.strftime('%Y-%m-%d') if tag.created_at else 'Unknown' }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('admin.edit_tag', tag_name=tag.name) }}" class="btn btn-outline-primary">
+                                            <i class="fa-solid fa-edit"></i>
+                                        </a>
+                                        <a href="{{ url_for('admin.merge_tags', source=tag.name) }}" class="btn btn-outline-success">
+                                            <i class="fa-solid fa-code-merge"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-tag-name="{{ tag.name }}" data-question-count="{{ tag.question_count }}">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if pagination and pagination.pages > 1 %}
+                <nav aria-label="Page navigation" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if pagination.has_prev %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.tags', page=pagination.prev_num, search=request.args.get('search', ''), sort=request.args.get('sort', '')) }}">Previous</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Previous</span>
+                            </li>
+                        {% endif %}
+                        
+                        {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page %}
+                                {% if page == pagination.page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ page }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('admin.tags', page=page, search=request.args.get('search', ''), sort=request.args.get('sort', '')) }}">{{ page }}</a>
+                                    </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if pagination.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('admin.tags', page=pagination.next_num, search=request.args.get('search', ''), sort=request.args.get('sort', '')) }}">Next</a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Next</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="alert alert-info">
+                No tags found matching your criteria. <a href="{{ url_for('admin.create_tag') }}">Create a new tag</a>.
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Delete Tag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the tag "<span id="tag-name"></span>"?</p>
+                <div id="tag-warning" class="alert alert-warning" style="display: none;">
+                    This tag is used in <span id="question-count"></span> questions. Deleting it will remove the tag from all associated questions.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-form" action="{{ url_for('admin.delete_tag', tag_name='') }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup delete modal
+        const deleteModal = document.getElementById('deleteModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const tagName = button.dataset.tagName;
+                const questionCount = parseInt(button.dataset.questionCount);
+                
+                document.getElementById('tag-name').textContent = tagName;
+                
+                const tagWarning = document.getElementById('tag-warning');
+                if (questionCount > 0) {
+                    document.getElementById('question-count').textContent = questionCount;
+                    tagWarning.style.display = 'block';
+                } else {
+                    tagWarning.style.display = 'none';
+                }
+                
+                const form = document.getElementById('delete-form');
+                form.action = form.action.replace(/\/[^\/]*$/, '/' + encodeURIComponent(tagName));
+            });
+        }
+    });
+</script>
+{% endblock %}

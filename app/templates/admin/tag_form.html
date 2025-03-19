@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if tag else 'Create' }} Tag - Overflew{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">{{ 'Edit' if tag else 'Create' }} Tag</h2>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('admin.edit_tag', tag_name=tag.name) if tag else url_for('admin.create_tag') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Tag Name</label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ tag.name if tag else '' }}" required {% if tag %}readonly{% endif %}>
+                        <small class="form-text text-muted">Tag names should be lowercase, contain only letters, numbers, and hyphens, and be descriptive of the content.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="4">{{ tag.description if tag else '' }}</textarea>
+                        <small class="form-text text-muted">Provide a clear, concise explanation of when this tag should be used.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="related_tags" class="form-label">Related Tags (Optional)</label>
+                        <select class="form-select" id="related_tags" name="related_tags[]" multiple>
+                            {% for related_tag in all_tags %}
+                                {% if not tag or related_tag.name != tag.name %}
+                                    <option value="{{ related_tag.name }}" {{ 'selected' if tag and related_tag in tag.related_tags }}>{{ related_tag.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        <small class="form-text text-muted">Select tags that are commonly used together with this tag.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="excerpt" class="form-label">Short Excerpt (Optional)</label>
+                        <input type="text" class="form-control" id="excerpt" name="excerpt" value="{{ tag.excerpt if tag and tag.excerpt else '' }}" maxlength="100">
+                        <small class="form-text text-muted">A short, one-line description (max 100 characters) that appears in tag listings.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="wiki_content" class="form-label">Wiki Content (Optional)</label>
+                        <textarea class="form-control markdown-editor" id="wiki_content" name="wiki_content" rows="8">{{ tag.wiki_content if tag and tag.wiki_content else '' }}</textarea>
+                        <small class="form-text text-muted">Detailed information about the tag, including usage guidance, common pitfalls, and examples. Supports Markdown.</small>
+                    </div>
+                    
+                    {% if tag %}
+                        <div class="mb-3">
+                            <label class="form-label">Usage Statistics</label>
+                            <div class="card">
+                                <div class="card-body">
+                                    <p><strong>Created:</strong> {{ tag.created_at.strftime('%Y-%m-%d') }}</p>
+                                    <p><strong>Questions:</strong> {{ tag.question_count }}</p>
+                                    <p><strong>Followers:</strong> {{ tag.follower_count }}</p>
+                                    <p><strong>Views:</strong> {{ tag.view_count }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('admin.tags') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">{{ 'Update' if tag else 'Create' }} Tag</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        {% if tag %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h2 class="card-title">Tag Preview</h2>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                        <span class="ms-3">{{ tag.question_count }} questions</span>
+                    </div>
+                    
+                    <div class="tag-description">
+                        {{ tag.description }}
+                    </div>
+                    
+                    {% if tag.wiki_content %}
+                        <div class="tag-wiki mt-3">
+                            <h5>Wiki Content Preview:</h5>
+                            <div class="markdown-body p-3 border rounded">
+                                {{ tag.wiki_content_html|safe }}
+                            </div>
+                        </div>
+                    {% endif %}
+                    
+                    {% if tag.related_tags %}
+                        <div class="mt-3">
+                            <h5>Related Tags:</h5>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for related_tag in tag.related_tags %}
+                                    <a href="{{ url_for('main.tag', tag_name=related_tag.name) }}" class="tag">{{ related_tag.name }}</a>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="btn btn-outline-primary">
+                            <i class="fa-solid fa-eye"></i> View Tag Page
+                        </a>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Select2 for the related tags field
+        if (typeof $.fn.select2 !== 'undefined') {
+            $('#related_tags').select2({
+                placeholder: 'Select related tags',
+                allowClear: true,
+                tags: false
+            });
+        }
+        
+        // Markdown editor preview
+        const markdownEditor = document.querySelector('.markdown-editor');
+        const previewDiv = document.createElement('div');
+        previewDiv.className = 'markdown-preview mt-2 p-3 border rounded d-none';
+        previewDiv.innerHTML = '<h6 class="mb-2">Preview:</h6><div class="preview-content"></div>';
+        
+        if (markdownEditor) {
+            markdownEditor.parentNode.insertBefore(previewDiv, markdownEditor.nextSibling);
+            
+            // Toggle preview button
+            const previewBtn = document.createElement('button');
+            previewBtn.type = 'button';
+            previewBtn.className = 'btn btn-sm btn-outline-secondary mt-2';
+            previewBtn.innerHTML = 'Toggle Preview';
+            previewBtn.onclick = function() {
+                previewDiv.classList.toggle('d-none');
+                if (!previewDiv.classList.contains('d-none')) {
+                    // Use marked.js to render markdown if available
+                    if (typeof marked !== 'undefined') {
+                        const previewContent = previewDiv.querySelector('.preview-content');
+                        previewContent.innerHTML = marked(markdownEditor.value);
+                        
+                        // Apply syntax highlighting if available
+                        if (typeof hljs !== 'undefined') {
+                            document.querySelectorAll('.preview-content pre code').forEach((block) => {
+                                hljs.highlightElement(block);
+                            });
+                        }
+                    } else {
+                        // Simple fallback if marked.js is not available
+                        const previewContent = previewDiv.querySelector('.preview-content');
+                        previewContent.textContent = markdownEditor.value;
+                    }
+                }
+            };
+            markdownEditor.parentNode.insertBefore(previewBtn, markdownEditor.nextSibling);
+        }
+    });
+</script>
+{% endblock %}

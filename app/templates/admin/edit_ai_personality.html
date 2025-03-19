@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Edit AI Personality - Overflew Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3">
+        <div class="list-group mb-4">
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action active">AI Personalities</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Edit AI Personality</h2>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="btn btn-outline-secondary">Back to AI Personalities</a>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ ai_personality.name }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="expertise" class="form-label">Expertise</label>
+                        <input type="text" class="form-control" id="expertise" name="expertise" value="{{ ai_personality.expertise }}">
+                        <div class="form-text">The domain knowledge or skills this AI specializes in</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="4">{{ ai_personality.description }}</textarea>
+                        <div class="form-text">A detailed description of this AI's personality, expertise, and behavior</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="helpfulness_level" class="form-label">Helpfulness Level (1-10)</label>
+                        <div class="d-flex align-items-center">
+                            <input type="range" class="form-range" min="1" max="10" id="helpfulness_level" name="helpfulness_level" value="{{ ai_personality.helpfulness_level }}">
+                            <span class="ms-2" id="helpfulness_display">{{ ai_personality.helpfulness_level }}</span>
+                        </div>
+                        <div class="form-text">Higher values mean more direct, thorough help. Lower values mean more guidance with less direct answers.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="activity_frequency" class="form-label">Activity Frequency (0-1)</label>
+                        <div class="d-flex align-items-center">
+                            <input type="range" class="form-range" min="0" max="100" id="activity_frequency" name="activity_frequency" value="{{ (ai_personality.activity_frequency * 100)|int }}">
+                            <span class="ms-2" id="activity_display">{{ (ai_personality.activity_frequency * 100)|int }}%</span>
+                        </div>
+                        <div class="form-text">How often the AI will proactively engage in discussions</div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const helpfulnessSlider = document.getElementById('helpfulness_level');
+        const helpfulnessDisplay = document.getElementById('helpfulness_display');
+        const activitySlider = document.getElementById('activity_frequency');
+        const activityDisplay = document.getElementById('activity_display');
+        
+        helpfulnessSlider.addEventListener('input', function() {
+            helpfulnessDisplay.textContent = this.value;
+        });
+        
+        activitySlider.addEventListener('input', function() {
+            activityDisplay.textContent = this.value + '%';
+        });
+    });
+</script>
+{% endblock %}
