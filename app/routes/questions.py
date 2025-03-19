@@ -219,8 +219,17 @@ def add_comment(question_id):
 
 def ai_respond_to_question(question_id):
     """
-    Have AI personalities respond to a new question
+    Queue AI personalities to respond to a given question.
+
+    Retrieves the question by its ID and selects AI personalities that 
+    should respond based on their activity frequency. A minimum of 7 AI 
+    personalities is ensured to respond, unless fewer are available. 
+    Each selected AI personality formats a prompt with the question context 
+    and queues a task to generate an AI answer in parallel.
+
+    :param question_id: The ID of the question to which AI personalities should respond.
     """
+    
     question = Question.query.get(question_id)
     if not question:
         current_app.logger.warning(f"Question {question_id} not found for AI response")
@@ -267,7 +276,14 @@ def ai_respond_to_question(question_id):
 
 def _generate_ai_answer(prompt, ai_user_id, question_id=None, answer_id=None, comment_id=None, ai_personality_id=None):
     """
-    Generate and save an AI response - this function runs in a separate thread
+    Generate an AI response to a prompt, vote if needed, and submit as an answer or comment
+    
+    :param prompt: The prompt to generate a response for
+    :param ai_user_id: The ID of the AI user to generate the response as
+    :param question_id: The ID of the question to answer, if applicable
+    :param answer_id: The ID of the answer to comment on, if applicable
+    :param comment_id: The ID of the comment to reply to, if applicable
+    :param ai_personality_id: The ID of the AI personality to use when generating the response
     """
     try:
         # Get the AI personality
@@ -379,7 +395,13 @@ def _generate_ai_answer(prompt, ai_user_id, question_id=None, answer_id=None, co
 
 def ai_respond_to_vote(question_id, answer_id, comment_id, vote_type, voter_id):
     """
-    Have AI personalities respond to votes
+    Have AI personalities respond to votes on questions, answers, and comments
+    
+    :param question_id: The ID of the question that was voted on, if applicable
+    :param answer_id: The ID of the answer that was voted on, if applicable
+    :param comment_id: The ID of the comment that was voted on, if applicable
+    :param vote_type: The type of vote that was cast (1 for upvote, -1 for downvote)
+    :param voter_id: The ID of the user that cast the vote
     """
     # Determine which content was voted on
     content = None
@@ -488,13 +510,17 @@ def ai_respond_to_vote(question_id, answer_id, comment_id, vote_type, voter_id):
 
 def ai_respond_to_comment(comment_id, question_id=None, answer_id=None):
     """
-    Have AI personalities respond to new comments
+    Have AI personalities respond to comments on questions or answers.
+
+    :param comment_id: The ID of the comment to which the AI should respond.
+    :param question_id: The ID of the question associated with the comment, if applicable.
+    :param answer_id: The ID of the answer associated with the comment, if applicable.
     """
     # Get the comment
     comment = Comment.query.get(comment_id)
     if not comment:
         return
-        
+
     # Get the parent content
     parent = None
     if question_id:
@@ -507,25 +533,25 @@ def ai_respond_to_comment(comment_id, question_id=None, answer_id=None):
     elif comment.answer_id:
         parent = Answer.query.get(comment.answer_id)
         answer_id = comment.answer_id
-        
+
     if not parent:
         return
-        
+
     # Small chance for an AI to respond
     if random.random() < 0.4:  # 40% chance
         # Get AI personalities
         ai_personalities = AIPersonality.query.all()
         if not ai_personalities:
             return
-            
+
         # Pick a random AI
         ai_personality = random.choice(ai_personalities)
-        
+
         # Get the AI user
         ai_user = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).first()
         if not ai_user:
             return
-            
+
         # Format context based on comment location
         if question_id:
             question = Question.query.get(question_id)
@@ -534,17 +560,17 @@ def ai_respond_to_comment(comment_id, question_id=None, answer_id=None):
             answer = Answer.query.get(answer_id)
             question = Question.query.get(answer.question_id)
             context = f"Question: {question.title}\nAnswer: {answer.body}\nComment: {comment.body}"
-            
+
         prompt = ai_personality.format_prompt(comment.body, context)
-        
+
         # Queue the AI response generation to run in parallel
         queue_task(
-            _generate_ai_answer, 
-            prompt, 
-            ai_user.id, 
-            None, 
-            None, 
-            comment_id, 
+            _generate_ai_answer,
+            prompt,
+            ai_user.id,
+            None,
+            None,
+            comment_id,
             ai_personality.id,
             parallel=True
         )
