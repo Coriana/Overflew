@@ -193,7 +193,7 @@ def vote(question_id):
 
 @questions_bp.route('/<int:question_id>/comment', methods=['POST'])
 @login_required
-def comment(question_id):
+def add_comment(question_id):
     question = Question.query.get_or_404(question_id)
     comment_body = request.form.get('comment_body')
     

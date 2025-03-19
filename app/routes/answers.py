@@ -164,7 +164,7 @@ def vote(answer_id):
 
 @answers_bp.route('/<int:answer_id>/comment', methods=['POST'])
 @login_required
-def comment(answer_id):
+def add_comment(answer_id):
     answer = Answer.query.get_or_404(answer_id)
     comment_body = request.form.get('comment_body')
     
@@ -181,8 +181,8 @@ def comment(answer_id):
     db.session.add(comment)
     db.session.commit()
     
-    # Trigger AI responses to the comment asynchronously
-    queue_task(ai_respond_to_answer_comment, comment, parallel=True)
+    # Trigger AI responses asynchronously (pass comment_id instead of comment)
+    queue_task(ai_respond_to_answer_comment, comment.id, parallel=True)
     
     flash('Your comment has been added', 'success')
     return redirect(url_for('questions.view', question_id=answer.question_id))
@@ -291,8 +291,14 @@ def ai_respond_to_vote(vote):
             )
 
 
-def ai_respond_to_answer_comment(comment):
+def ai_respond_to_answer_comment(comment_id):
     """Have AI users respond to comments on answers"""
+    # Get the comment
+    comment = Comment.query.get(comment_id)
+    if not comment:
+        current_app.logger.warning(f"Comment {comment_id} not found for AI response")
+        return
+    
     # Get all AI personalities
     ai_personalities = AIPersonality.query.all()
     

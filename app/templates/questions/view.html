@@ -95,7 +95,7 @@
             <!-- Comments collapse -->
             <div class="collapse" id="add-comment-question-{{ question.id }}">
                 {% if current_user.is_authenticated %}
-                    <form class="comment-form mt-3" action="{{ url_for('questions.comment', question_id=question.id) }}" method="post">
+                    <form class="comment-form mt-3" action="{{ url_for('questions.add_comment', question_id=question.id) }}" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="mb-3">
                             <textarea class="form-control" name="comment_body" rows="2" required></textarea>
@@ -260,7 +260,7 @@
                     <!-- Comments collapse -->
                     <div class="collapse" id="add-comment-answer-{{ answer.id }}">
                         {% if current_user.is_authenticated %}
-                            <form class="comment-form mt-3" action="{{ url_for('answers.comment', answer_id=answer.id) }}" method="post">
+                            <form class="comment-form mt-3" action="{{ url_for('answers.add_comment', answer_id=answer.id) }}" method="post">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <div class="mb-3">
                                     <textarea class="form-control" name="comment_body" rows="2" required></textarea>
