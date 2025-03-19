@@ -228,11 +228,15 @@ def vote():
         
         # Trigger AI responses to the vote
         if question_id:
-            from app.routes.questions import ai_respond_to_vote
-            ai_respond_to_vote(question_id, None, None, vote_type, current_user.id)
+            vote_obj = Vote.query.filter_by(user_id=current_user.id, question_id=question_id).first()
+            if vote_obj:
+                from app.routes.questions import ai_respond_to_vote
+                queue_task(ai_respond_to_vote, vote_obj, parallel=True)
         elif answer_id:
-            from app.routes.answers import ai_respond_to_vote
-            ai_respond_to_vote(None, answer_id, None, vote_type, current_user.id)
+            vote_obj = Vote.query.filter_by(user_id=current_user.id, answer_id=answer_id).first()
+            if vote_obj:
+                from app.routes.answers import ai_respond_to_vote
+                queue_task(ai_respond_to_vote, vote_obj, parallel=True)
         
         return jsonify({
             'success': True, 

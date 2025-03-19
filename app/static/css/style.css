@@ -219,6 +219,20 @@ body {
     font-size: 1.5rem;
 }
 
+.answers-sort {
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
+
+.answers-sort select {
+    border: none;
+    background: transparent;
+    color: #0a95ff;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0;
+}
+
 .comment {
     border-top: 1px solid #f1f1f1;
     padding: 8px 0;
@@ -227,11 +241,62 @@ body {
 
 .comment-text {
     margin-bottom: 4px;
+    position: relative;
+}
+
+.comment-vote {
+    position: absolute;
+    right: 0;
+    top: 0;
 }
 
 .comment-meta {
     font-size: 0.8rem;
     color: #6a737c;
+}
+
+.comments-list {
+    border-top: 1px solid #e3e6e8;
+    margin-top: 16px;
+    position: relative;
+}
+
+.comments-container {
+    max-height: 300px;
+    overflow-y: auto;
+    transition: max-height 0.3s ease;
+}
+
+.comments-container.collapsed {
+    max-height: 150px;
+    overflow-y: hidden;
+}
+
+.comments-toggle {
+    color: #0a95ff;
+    font-size: 0.85rem;
+    cursor: pointer;
+    margin-bottom: 8px;
+    display: inline-block;
+}
+
+.comments-toggle:hover {
+    text-decoration: underline;
+}
+
+.comments-sort {
+    font-size: 0.85rem;
+    float: right;
+    margin-bottom: 8px;
+}
+
+.comments-sort select {
+    border: none;
+    background: transparent;
+    color: #0a95ff;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0;
 }
 
 /* Forms */

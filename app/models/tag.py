@@ -1,6 +1,13 @@
 from app import db
 
 
+# Association table for user-tag following
+user_tag = db.Table('user_tag',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('tag_id', db.Integer, db.ForeignKey('tags.id'), primary_key=True)
+)
+
+
 class Tag(db.Model):
     __tablename__ = 'tags'
 
@@ -10,6 +17,8 @@ class Tag(db.Model):
     
     # Relationships
     questions = db.relationship('QuestionTag', backref='tag', lazy='dynamic')
+    followers = db.relationship('User', secondary=user_tag, 
+                              backref=db.backref('followed_tags', lazy='dynamic'))
 
     def __repr__(self):
         return f'<Tag {self.name}>'

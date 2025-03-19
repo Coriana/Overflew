@@ -42,7 +42,7 @@
                                 <span class="d-block small">votes</span>
                             </div>
                             <div>
-                                <span class="fw-bold {{ 'text-success' if question.answers|length > 0 else '' }}">{{ question.answers|length }}</span>
+                                <span class="fw-bold {{ 'text-success' if question.answers.count() > 0 else '' }}">{{ question.answers.count() }}</span>
                                 <span class="d-block small">answers</span>
                             </div>
                             <div>

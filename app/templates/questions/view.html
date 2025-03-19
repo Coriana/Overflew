@@ -113,34 +113,55 @@
             <!-- Comments list -->
             <div class="comments-list mt-3">
                 {% if question.comments %}
-                    {% for comment in question.comments %}
-                        <div class="comment" id="comment-{{ comment.id }}">
-                            <div class="comment-text">
-                                {{ comment.body_html|safe }}
-                                {% if current_user.is_authenticated %}
-                                    <div class="comment-vote float-end">
-                                        <button class="btn btn-sm btn-link p-0 {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
-                                            <i class="fa-solid fa-arrow-up"></i>
-                                        </button>
-                                        <span class="vote-count small">{{ comment.score }}</span>
-                                    </div>
-                                {% endif %}
-                            </div>
-                            <div class="comment-meta">
-                                – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
-                                {% if comment.author.is_ai %}
-                                    <span class="ai-badge">AI</span>
-                                {% endif %}
-                                <span class="text-muted">
-                                    {{ comment.created_at|timesince }}
-                                </span>
-                                {% if current_user.is_authenticated and (current_user.id == comment.author_id or current_user.is_admin) %}
-                                    <!-- Edit/Delete links omitted until routes are created -->
-                                {% endif %}
-                            </div>
+                    <div class="comments-header">
+                        <span class="comments-toggle" data-target="question-comments-{{ question.id }}">
+                            {% if question.comments.count() > 3 %}
+                                Show all {{ question.comments.count() }} comments
+                            {% else %}
+                                {{ question.comments.count() }} comment{{ 's' if question.comments.count() != 1 else '' }}
+                            {% endif %}
+                        </span>
+                        <div class="comments-sort">
+                            <select class="comment-sort-select" data-target="question-comments-{{ question.id }}">
+                                <option value="votes">Sort by votes</option>
+                                <option value="newest">Sort by newest</option>
+                                <option value="oldest" selected>Sort by oldest</option>
+                            </select>
                         </div>
-                    {% endfor %}
+                    </div>
+                    <div id="question-comments-{{ question.id }}" class="comments-container collapsed">
+                        {% for comment in question.comments %}
+                            <div class="comment" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}">
+                                <div class="comment-text">
+                                    {{ comment.html_content|safe }}
+                                    {% if current_user.is_authenticated %}
+                                        <div class="comment-vote float-end">
+                                            <button class="vote-button {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
+                                                <i class="fa-solid fa-arrow-up"></i>
+                                            </button>
+                                            <span class="vote-count small">{{ comment.score }}</span>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="comment-meta">
+                                    – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
+                                    {% if comment.author.is_ai %}
+                                        <span class="ai-badge">AI</span>
+                                    {% endif %}
+                                    <span class="text-muted">
+                                        {{ comment.created_at|timesince }}
+                                    </span>
+                                    {% if current_user.is_authenticated and (current_user.id == comment.author_id or current_user.is_admin) %}
+                                        <!-- Edit/Delete links omitted until routes are created -->
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
                 {% endif %}
+                <div class="mt-2">
+                    <a href="#" class="add-comment-link" data-bs-toggle="collapse" data-bs-target="#add-comment-question-{{ question.id }}">Add a comment</a>
+                </div>
             </div>
         </div>
     </div>
@@ -148,13 +169,22 @@
 
 <!-- Answer Count -->
 <div class="answer-count mb-3">
-    <h2 class="h4">{{ answers|count }} Answer{{ 's' if answers|count != 1 else '' }}</h2>
+    <div class="d-flex justify-content-between align-items-center">
+        <h2 class="h4">{{ answers|length }} Answer{{ 's' if answers|length != 1 else '' }}</h2>
+        <div class="answers-sort">
+            <select class="answer-sort-select" data-target="answers-list">
+                <option value="votes" selected>Sort by votes</option>
+                <option value="newest">Sort by newest</option>
+                <option value="oldest">Sort by oldest</option>
+            </select>
+        </div>
+    </div>
 </div>
 
 <!-- Answers -->
 <div class="answers-container" id="answers-list">
     {% for answer in answers %}
-        <div class="answer{{ ' accepted' if answer.is_accepted }}" id="answer-{{ answer.id }}">
+        <div class="answer{{ ' accepted' if answer.is_accepted }}" id="answer-{{ answer.id }}" data-score="{{ answer.score }}" data-created="{{ answer.created_at.isoformat() }}">
             <div class="row">
                 <div class="col-1">
                     <div class="vote-buttons" id="answer-vote-{{ answer.id }}">
@@ -248,34 +278,55 @@
                     <!-- Comments list -->
                     <div class="comments-list mt-3">
                         {% if answer.comments %}
-                            {% for comment in answer.comments %}
-                                <div class="comment" id="comment-{{ comment.id }}">
-                                    <div class="comment-text">
-                                        {{ comment.body_html|safe }}
-                                        {% if current_user.is_authenticated %}
-                                            <div class="comment-vote float-end">
-                                                <button class="btn btn-sm btn-link p-0 {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
-                                                    <i class="fa-solid fa-arrow-up"></i>
-                                                </button>
-                                                <span class="vote-count small">{{ comment.score }}</span>
-                                            </div>
-                                        {% endif %}
-                                    </div>
-                                    <div class="comment-meta">
-                                        – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
-                                        {% if comment.author.is_ai %}
-                                            <span class="ai-badge">AI</span>
-                                        {% endif %}
-                                        <span class="text-muted">
-                                            {{ comment.created_at|timesince }}
-                                        </span>
-                                        {% if current_user.is_authenticated and (current_user.id == comment.author_id or current_user.is_admin) %}
-                                            <!-- Edit/Delete links omitted until routes are created -->
-                                        {% endif %}
-                                    </div>
+                            <div class="comments-header">
+                                <span class="comments-toggle" data-target="answer-comments-{{ answer.id }}">
+                                    {% if answer.comments.count() > 3 %}
+                                        Show all {{ answer.comments.count() }} comments
+                                    {% else %}
+                                        {{ answer.comments.count() }} comment{{ 's' if answer.comments.count() != 1 else '' }}
+                                    {% endif %}
+                                </span>
+                                <div class="comments-sort">
+                                    <select class="comment-sort-select" data-target="answer-comments-{{ answer.id }}">
+                                        <option value="votes">Sort by votes</option>
+                                        <option value="newest">Sort by newest</option>
+                                        <option value="oldest" selected>Sort by oldest</option>
+                                    </select>
                                 </div>
-                            {% endfor %}
+                            </div>
+                            <div id="answer-comments-{{ answer.id }}" class="comments-container collapsed">
+                                {% for comment in answer.comments %}
+                                    <div class="comment" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}">
+                                        <div class="comment-text">
+                                            {{ comment.html_content|safe }}
+                                            {% if current_user.is_authenticated %}
+                                                <div class="comment-vote float-end">
+                                                    <button class="btn btn-sm btn-link p-0 {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
+                                                        <i class="fa-solid fa-arrow-up"></i>
+                                                    </button>
+                                                    <span class="vote-count small">{{ comment.score }}</span>
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                        <div class="comment-meta">
+                                            – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
+                                            {% if comment.author.is_ai %}
+                                                <span class="ai-badge">AI</span>
+                                            {% endif %}
+                                            <span class="text-muted">
+                                                {{ comment.created_at|timesince }}
+                                            </span>
+                                            {% if current_user.is_authenticated and (current_user.id == comment.author_id or current_user.is_admin) %}
+                                                <!-- Edit/Delete links omitted until routes are created -->
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
                         {% endif %}
+                        <div class="mt-2">
+                            <a href="#" class="add-comment-link" data-bs-toggle="collapse" data-bs-target="#add-comment-answer-{{ answer.id }}">Add a comment</a>
+                        </div>
                     </div>
                 </div>
             </div>

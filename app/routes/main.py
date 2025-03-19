@@ -1,5 +1,5 @@
-from flask import Blueprint, render_template, redirect, url_for, request, current_app
-from flask_login import current_user
+from flask import Blueprint, render_template, redirect, url_for, request, current_app, flash
+from flask_login import current_user, login_required
 from app.models.question import Question
 from app.models.answer import Answer
 from app.models.comment import Comment
@@ -72,11 +72,16 @@ def search():
         Tag.name.ilike(f'%{query}%')
     )
     
-    # Combine the queries
-    combined_questions = questions.union(tag_questions).order_by(Question.created_at.desc())
+    # Combine the queries - Use distinct to avoid duplicates instead of union
+    # SQLite has issues with UNION in some complex queries
+    combined_query = Question.query.filter(
+        (Question.title.ilike(f'%{query}%') | 
+         Question.body.ilike(f'%{query}%') |
+         Question.id.in_([q.id for q in tag_questions]))
+    ).order_by(Question.created_at.desc())
     
     # Paginate the results
-    paginated_questions = combined_questions.paginate(
+    paginated_questions = combined_query.paginate(
         page=page, per_page=10, error_out=False
     )
     
@@ -101,21 +106,74 @@ def tags():
 def tag(tag_name):
     tag = Tag.query.filter_by(name=tag_name).first_or_404()
     page = request.args.get('page', 1, type=int)
+    sort = request.args.get('sort', 'newest')
     
     # Get questions with this tag
-    questions = Question.query.join(
+    query = Question.query.join(
         QuestionTag, Question.id == QuestionTag.question_id
     ).join(
         Tag, QuestionTag.tag_id == Tag.id
     ).filter(
         Tag.name == tag_name
-    ).order_by(Question.created_at.desc()).paginate(
-        page=page, per_page=10, error_out=False
     )
+    
+    # Apply sorting
+    if sort == 'activity':
+        query = query.order_by(Question.updated_at.desc())
+    elif sort == 'votes':
+        query = query.order_by(Question.score.desc())
+    elif sort == 'unanswered':
+        query = query.filter(~Question.answers.any())
+    else:  # Default to newest
+        query = query.order_by(Question.created_at.desc())
+    
+    # Paginate results
+    questions = query.paginate(page=page, per_page=10, error_out=False)
+    
+    # Check if the current user is following this tag
+    is_following = False
+    if current_user.is_authenticated:
+        try:
+            is_following = tag in current_user.followed_tags
+        except:
+            # If followed_tags relationship isn't set up yet, just default to False
+            is_following = False
     
     current_app.logger.info(f"Tag '{tag_name}' found {questions.total} questions")
     
-    return render_template('main/tag.html', tag=tag, questions=questions)
+    return render_template('main/tag.html', tag=tag, questions=questions, sort=sort, is_following=is_following)
+
+
+@main_bp.route('/tag/<string:tag_name>/follow', methods=['POST'])
+@login_required
+def follow_tag(tag_name):
+    tag = Tag.query.filter_by(name=tag_name).first_or_404()
+    
+    # Check if user is already following this tag
+    if tag in current_user.followed_tags:
+        flash('You are already following this tag.', 'info')
+    else:
+        current_user.followed_tags.append(tag)
+        db.session.commit()
+        flash(f'You are now following the [{tag.name}] tag.', 'success')
+    
+    return redirect(url_for('main.tag', tag_name=tag.name))
+
+
+@main_bp.route('/tag/<string:tag_name>/unfollow', methods=['POST'])
+@login_required
+def unfollow_tag(tag_name):
+    tag = Tag.query.filter_by(name=tag_name).first_or_404()
+    
+    # Check if user is following this tag
+    if tag in current_user.followed_tags:
+        current_user.followed_tags.remove(tag)
+        db.session.commit()
+        flash(f'You are no longer following the [{tag.name}] tag.', 'success')
+    else:
+        flash('You were not following this tag.', 'info')
+    
+    return redirect(url_for('main.tag', tag_name=tag.name))
 
 
 @main_bp.route('/users')

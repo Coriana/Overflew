@@ -13,6 +13,106 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize AI response functionality
     initializeAIResponders();
+    
+    // Comment toggle and sorting functionality
+    // Toggle comments visibility
+    document.querySelectorAll('.comments-toggle').forEach(toggle => {
+        toggle.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const container = document.getElementById(targetId);
+            
+            if (container.classList.contains('collapsed')) {
+                container.classList.remove('collapsed');
+                this.textContent = 'Hide comments';
+            } else {
+                container.classList.add('collapsed');
+                const commentCount = container.querySelectorAll('.comment').length;
+                this.textContent = commentCount > 3 
+                    ? `Show all ${commentCount} comments` 
+                    : `${commentCount} comment${commentCount !== 1 ? 's' : ''}`;
+            }
+        });
+    });
+    
+    // Sort comments
+    document.querySelectorAll('.comment-sort-select').forEach(select => {
+        select.addEventListener('change', function() {
+            const targetId = this.getAttribute('data-target');
+            const container = document.getElementById(targetId);
+            const comments = Array.from(container.querySelectorAll('.comment'));
+            
+            const sortType = this.value;
+            
+            // Sort comments based on selected option
+            switch(sortType) {
+                case 'votes':
+                    comments.sort((a, b) => {
+                        return parseInt(b.getAttribute('data-score')) - parseInt(a.getAttribute('data-score'));
+                    });
+                    break;
+                case 'newest':
+                    comments.sort((a, b) => {
+                        return new Date(b.getAttribute('data-created')) - new Date(a.getAttribute('data-created'));
+                    });
+                    break;
+                case 'oldest':
+                    comments.sort((a, b) => {
+                        return new Date(a.getAttribute('data-created')) - new Date(b.getAttribute('data-created'));
+                    });
+                    break;
+            }
+            
+            // Re-append sorted comments
+            comments.forEach(comment => {
+                container.appendChild(comment);
+            });
+        });
+    });
+    
+    // Sort answers
+    document.querySelector('.answer-sort-select')?.addEventListener('change', function() {
+        const targetId = this.getAttribute('data-target');
+        const container = document.getElementById(targetId);
+        const answers = Array.from(container.querySelectorAll('.answer'));
+        
+        const sortType = this.value;
+        
+        // Sort answers based on selected option
+        switch(sortType) {
+            case 'votes':
+                answers.sort((a, b) => {
+                    // If answer is accepted, it should be first
+                    if (a.classList.contains('accepted')) return -1;
+                    if (b.classList.contains('accepted')) return 1;
+                    
+                    return parseInt(b.getAttribute('data-score')) - parseInt(a.getAttribute('data-score'));
+                });
+                break;
+            case 'newest':
+                answers.sort((a, b) => {
+                    // If answer is accepted, it should be first
+                    if (a.classList.contains('accepted')) return -1;
+                    if (b.classList.contains('accepted')) return 1;
+                    
+                    return new Date(b.getAttribute('data-created')) - new Date(a.getAttribute('data-created'));
+                });
+                break;
+            case 'oldest':
+                answers.sort((a, b) => {
+                    // If answer is accepted, it should be first
+                    if (a.classList.contains('accepted')) return -1;
+                    if (b.classList.contains('accepted')) return 1;
+                    
+                    return new Date(a.getAttribute('data-created')) - new Date(b.getAttribute('data-created'));
+                });
+                break;
+        }
+        
+        // Re-append sorted answers
+        answers.forEach(answer => {
+            container.appendChild(answer);
+        });
+    });
 });
 
 // Setup markdown editor and preview functionality
