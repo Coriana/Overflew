@@ -99,7 +99,7 @@ def new_ai_personality():
     """Create a new AI personality"""
     from flask_wtf import FlaskForm
     from wtforms import StringField, TextAreaField, IntegerField, SubmitField
-    from wtforms.validators import DataRequired, Length, NumberRange, Email
+    from wtforms.validators import DataRequired, Length, NumberRange
     
     # Define the form for creating AI personalities
     class AIPersonalityForm(FlaskForm):
@@ -114,7 +114,7 @@ def new_ai_personality():
         activity_frequency = IntegerField('Activity Frequency (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
         prompt_template = TextAreaField('Prompt Template', validators=[DataRequired()])
         ai_username = StringField('AI Username', validators=[DataRequired(), Length(min=2, max=100)])
-        ai_email = StringField('AI Email', validators=[DataRequired(), Email()])
+        ai_email = StringField('AI Email', validators=[DataRequired(), Length(min=5, max=120)])
         submit = SubmitField('Create AI Personality')
     
     form = AIPersonalityForm()
@@ -130,7 +130,7 @@ def new_ai_personality():
             helpfulness_level=form.helpfulness_level.data,
             strictness_level=form.strictness_level.data,
             verbosity_level=form.verbosity_level.data,
-            activity_frequency=form.activity_frequency.data,
+            activity_frequency=form.activity_frequency.data / 10.0,
             prompt_template=form.prompt_template.data
         )
         
@@ -155,36 +155,46 @@ def new_ai_personality():
     return render_template('admin/new_ai_personality.html', form=form)
 
 
-@admin_bp.route('/ai_personalities/<int:personality_id>/edit', methods=['GET', 'POST'])
+@admin_bp.route('/ai_personalities/edit/<int:personality_id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def edit_ai_personality(personality_id):
     ai_personality = AIPersonality.query.get_or_404(personality_id)
     
-    if request.method == 'POST':
-        ai_personality.name = request.form.get('name')
-        ai_personality.expertise = request.form.get('expertise')
-        ai_personality.description = request.form.get('description')
-        ai_personality.helpfulness_level = int(request.form.get('helpfulness_level', 5))
-        ai_personality.activity_frequency = float(request.form.get('activity_frequency', 0.5)) / 100.0
+    from flask_wtf import FlaskForm
+    from wtforms import StringField, TextAreaField, IntegerField, SubmitField
+    from wtforms.validators import DataRequired, Length, NumberRange
+    
+    # Define the form for editing AI personalities
+    class AIPersonalityForm(FlaskForm):
+        name = StringField('Name', validators=[DataRequired(), Length(min=2, max=100)])
+        description = TextAreaField('Description', validators=[DataRequired()])
+        expertise = TextAreaField('Expertise', validators=[DataRequired()])
+        personality_traits = TextAreaField('Personality Traits', validators=[DataRequired()])
+        interaction_style = TextAreaField('Interaction Style', validators=[DataRequired()])
+        helpfulness_level = IntegerField('Helpfulness Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
+        strictness_level = IntegerField('Strictness Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
+        verbosity_level = IntegerField('Verbosity Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
+        activity_frequency = IntegerField('Activity Frequency (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
+        prompt_template = TextAreaField('Prompt Template', validators=[DataRequired()])
+        ai_username = StringField('AI Username', validators=[DataRequired(), Length(min=2, max=100)])
+        ai_email = StringField('AI Email', validators=[DataRequired(), Length(min=5, max=120)])
+        submit = SubmitField('Update AI Personality')
+    
+    # Create form and populate with existing data
+    form = AIPersonalityForm(obj=ai_personality)
+    
+    # Set activity_frequency from decimal to integer for form display
+    if isinstance(ai_personality.activity_frequency, float):
+        form.activity_frequency.data = int(ai_personality.activity_frequency * 10)
+    
+    # If form is submitted and valid
+    if form.validate_on_submit():
+        # Update AI personality with form data
+        form.populate_obj(ai_personality)
         
-        # Preserve existing values for required fields if not explicitly updated
-        if not hasattr(ai_personality, 'personality_traits') or not ai_personality.personality_traits:
-            ai_personality.personality_traits = "Helpful, Expert, Friendly"
-        
-        if not hasattr(ai_personality, 'interaction_style') or not ai_personality.interaction_style:
-            ai_personality.interaction_style = "Conversational"
-            
-        if not hasattr(ai_personality, 'prompt_template') or not ai_personality.prompt_template:
-            ai_personality.prompt_template = """You are {{name}}, an AI with expertise in {{expertise}} and the following personality traits: {{personality_traits}}.
-            Please respond to the following content in your own style: {{content}}
-            {{context}}"""
-            
-        if not hasattr(ai_personality, 'strictness_level') or not ai_personality.strictness_level:
-            ai_personality.strictness_level = 5
-            
-        if not hasattr(ai_personality, 'verbosity_level') or not ai_personality.verbosity_level:
-            ai_personality.verbosity_level = 5
+        # Convert activity_frequency back to decimal (0-1 range)
+        ai_personality.activity_frequency = form.activity_frequency.data / 10.0
         
         try:
             db.session.commit()
@@ -194,7 +204,7 @@ def edit_ai_personality(personality_id):
             db.session.rollback()
             flash(f'Error updating AI personality: {str(e)}', 'danger')
     
-    return render_template('admin/edit_ai_personality.html', ai_personality=ai_personality)
+    return render_template('admin/edit_ai_personality.html', form=form, ai_personality=ai_personality)
 
 
 @admin_bp.route('/ai_personalities/delete/<int:personality_id>', methods=['POST'])
