@@ -5,6 +5,8 @@ from app.models.question import Question
 from app.models.answer import Answer
 from app.models.tag import Tag, QuestionTag
 from app.models.ai_personality import AIPersonality
+from app.models.comment import Comment
+from app.models.vote import Vote
 from app import db
 from functools import wraps
 from faker import Faker
@@ -213,17 +215,19 @@ def edit_ai_personality(personality_id):
 def delete_ai_personality(personality_id):
     ai_personality = AIPersonality.query.get_or_404(personality_id)
     
-    # First, find and update any AI users associated with this personality
-    ai_users = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).all()
-    for user in ai_users:
-        user.ai_personality_id = None  # Disassociate the user from the personality
-    
-    # Then delete the personality
-    db.session.delete(ai_personality)
-    
     try:
+        # Find AI users associated with this personality
+        ai_users = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).all()
+        
+        # Delete associated AI users
+        for user in ai_users:
+            db.session.delete(user)
+        
+        # Then delete the personality
+        db.session.delete(ai_personality)
         db.session.commit()
-        flash('AI Personality deleted successfully.', 'success')
+        
+        flash('AI Personality and associated AI users deleted successfully.', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting AI personality: {str(e)}', 'danger')
@@ -255,11 +259,21 @@ def delete_user(user_id):
         flash('Cannot delete admin users', 'danger')
         return redirect(url_for('admin.users'))
     
-    # Delete the user
-    db.session.delete(user)
-    db.session.commit()
+    try:
+        # Using bulk delete to remove user's questions, comments, answers, and votes
+        db.session.query(Comment).filter_by(author_id=user_id).delete()
+        db.session.query(Answer).filter_by(author_id=user_id).delete()
+        db.session.query(Vote).filter_by(user_id=user_id).delete()
+        db.session.query(Question).filter_by(author_id=user_id).delete()
+        
+        # Delete the user
+        db.session.delete(user)
+        db.session.commit()
+        flash('User deleted successfully', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting user: {str(e)}', 'danger')
     
-    flash('User deleted successfully', 'success')
     return redirect(url_for('admin.users'))
 
 
