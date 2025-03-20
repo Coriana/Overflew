@@ -5,6 +5,199 @@
 {% block content %}
 <div id="alerts-container"></div>
 
+<!-- Recursive Comment Macro -->
+{% macro render_comment(comment, level=0, parent_id=0, max_depth=7, max_shown=3) %}
+    <div class="comment comment-level-{{ level }}" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}">
+        <div class="comment-thread-line"></div>
+        <div class="comment-content">
+            {% if comment.replies.count() > 0 %}
+                <button class="comment-collapse-toggle" title="Collapse thread">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            {% endif %}
+            
+            <div class="comment-text">
+                {% if comment.is_deleted %}
+                    <em>[deleted]</em>
+                {% else %}
+                    {{ comment.html_content|safe }}
+                {% endif %}
+                {% if current_user.is_authenticated %}
+                    <div class="comment-vote float-end">
+                        <button class="vote-button {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
+                            <i class="fa-solid fa-arrow-up"></i>
+                        </button>
+                        <span class="vote-count small">{{ comment.score }}</span>
+                        <button class="vote-button {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == -1 }}" data-vote-type="down" data-comment-id="{{ comment.id }}">
+                            <i class="fa-solid fa-arrow-down"></i>
+                        </button>
+                    </div>
+                {% endif %}
+            </div>
+            
+            <div class="comment-meta">
+                {% if not comment.is_deleted %}
+                    – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
+                    {% if comment.author.is_ai %}
+                        <span class="ai-badge">AI</span>
+                    {% endif %}
+                {% endif %}
+                <span class="text-muted">
+                    {{ comment.created_at|timesince }}
+                </span>
+                {% if current_user.is_authenticated %}
+                    <a href="#" class="reply-link text-muted small" data-comment-id="{{ comment.id }}">
+                        reply
+                    </a>
+                    {% if not comment.is_deleted and (current_user.id == comment.user_id or current_user.is_admin) %}
+                        <a href="#" class="delete-comment-link text-muted text-danger small" data-comment-id="{{ comment.id }}">
+                            delete
+                        </a>
+                    {% endif %}
+                    <a href="#comment-{{ comment.id }}" class="permalink text-muted small ms-2">
+                        permalink
+                    </a>
+                {% endif %}
+            </div>
+            
+            <!-- Reply form (hidden by default) -->
+            <div class="reply-form-container collapse" id="reply-form-{{ comment.id }}">
+                {% if current_user.is_authenticated %}
+                    <form class="comment-form mt-2" action="{{ url_for('comments.add') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="content_type" value="comment">
+                        <input type="hidden" name="content_id" value="{{ comment.id }}">
+                        <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">
+                        <div class="d-flex">
+                            <div class="flex-grow-1">
+                                <textarea class="form-control" name="body" rows="2" placeholder="Add a reply..."></textarea>
+                            </div>
+                            <div class="ms-2">
+                                <button type="submit" class="btn btn-primary btn-sm">Post</button>
+                            </div>
+                        </div>
+                    </form>
+                {% else %}
+                    <div class="alert alert-info mt-2">
+                        <a href="{{ url_for('auth.login') }}">Login</a> to reply to this comment.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Recursively display replies, but only up to max_depth -->
+        {% if level < max_depth and comment.replies.count() > 0 %}
+            <div class="replies">
+                {% for reply in comment.replies %}
+                    {{ render_comment(reply, level=level+1, parent_id=comment.id, max_depth=max_depth, max_shown=max_shown) }}
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+{% endmacro %}
+
+<!-- Add CSS for comment indentation and thread lines -->
+{% block extra_css %}
+{{ super() }}
+<style>
+/* Reddit-style comment tree */
+.comment {
+    position: relative;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
+
+.comment-content {
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.comment-level-0 { margin-left: 0; }
+.comment-level-1 { margin-left: 20px; }
+.comment-level-2 { margin-left: 40px; }
+.comment-level-3 { margin-left: 60px; }
+.comment-level-4 { margin-left: 80px; }
+.comment-level-5 { margin-left: 100px; }
+.comment-level-6 { margin-left: 120px; }
+.comment-level-7 { margin-left: 140px; }
+.comment-level-8 { margin-left: 160px; }
+.comment-level-9 { margin-left: 180px; }
+.comment-level-10 { margin-left: 200px; }
+
+/* Thread lines */
+.comment-thread-line {
+    position: absolute;
+    left: -14px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #ddd;
+}
+
+.comment-level-0 .comment-thread-line {
+    display: none;
+}
+
+/* Comment collapsing */
+.comment-collapse-toggle {
+    position: absolute;
+    left: -24px;
+    top: 8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    z-index: 2;
+}
+
+.comment-collapse-toggle:hover {
+    background-color: #e0e0e0;
+}
+
+.comment-collapsed-indicator {
+    background-color: #f8f9fa;
+    padding: 5px 10px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 0.9em;
+    color: #666;
+    cursor: pointer;
+}
+
+.comment-collapsed-indicator:hover {
+    background-color: #f0f0f0;
+}
+
+.load-more-comments {
+    margin: 10px 0;
+    color: #666;
+    font-size: 0.9em;
+    cursor: pointer;
+    text-align: center;
+}
+
+.load-more-comments:hover {
+    text-decoration: underline;
+}
+
+.replies.collapsed {
+    display: none;
+}
+
+.comments-container.collapsed {
+    max-height: 300px;
+    overflow-y: hidden;
+}
+</style>
+{% endblock %}
+
 <!-- Question -->
 <div class="question-container mb-4">
     <div class="question-header">
@@ -94,286 +287,81 @@
             
             <!-- Comments collapse -->
             <div class="collapse" id="add-comment-question-{{ question.id }}">
-                {% if current_user.is_authenticated %}
-                    <form class="comment-form mt-3" action="{{ url_for('questions.add_comment', question_id=question.id) }}" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="mb-3">
-                            <textarea class="form-control" name="comment_body" rows="2" required></textarea>
-                            <small class="form-text text-muted">Use comments to ask for clarification or add relevant information.</small>
-                        </div>
-                        <button type="submit" class="btn btn-sm btn-primary">Add Comment</button>
-                    </form>
-                {% else %}
-                    <div class="alert alert-warning mt-3">
-                        Please <a href="{{ url_for('auth.login') }}">log in</a> to add a comment.
-                    </div>
-                {% endif %}
-            </div>
-            
-            <!-- Comments list -->
-            <div class="comments-list mt-3">
-                {% if question.comments %}
-                    <div class="comments-header">
-                        <span class="comments-toggle" data-target="question-comments-{{ question.id }}">
-                            {% if question.comments.count() > 3 %}
-                                Show all {{ question.comments.count() }} comments
-                            {% else %}
-                                {{ question.comments.count() }} comment{{ 's' if question.comments.count() != 1 else '' }}
-                            {% endif %}
-                        </span>
-                        <div class="comments-sort">
-                            <select class="comment-sort-select" data-target="question-comments-{{ question.id }}">
-                                <option value="votes">Sort by votes</option>
-                                <option value="newest">Sort by newest</option>
-                                <option value="oldest" selected>Sort by oldest</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div id="question-comments-{{ question.id }}" class="comments-container collapsed">
-                        {% for comment in question.comments %}
-                            <div class="comment" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}">
-                                <div class="comment-text">
-                                    {{ comment.html_content|safe }}
-                                    {% if current_user.is_authenticated %}
-                                        <div class="comment-vote float-end">
-                                            <button class="vote-button {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
-                                                <i class="fa-solid fa-arrow-up"></i>
-                                            </button>
-                                            <span class="vote-count small">{{ comment.score }}</span>
-                                        </div>
-                                    {% endif %}
-                                </div>
-                                <div class="comment-meta">
-                                    – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
-                                    {% if comment.author.is_ai %}
-                                        <span class="ai-badge">AI</span>
-                                    {% endif %}
-                                    <span class="text-muted">
-                                        {{ comment.created_at|timesince }}
-                                    </span>
-                                    {% if current_user.is_authenticated and (current_user.id == comment.author_id or current_user.is_admin) %}
-                                        <!-- Edit/Delete links omitted until routes are created -->
-                                    {% endif %}
-                                </div>
+                <div class="mt-3">
+                    {% if current_user.is_authenticated %}
+                        <form action="{{ url_for('comments.add') }}" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="content_type" value="question">
+                            <input type="hidden" name="content_id" value="{{ question.id }}">
+                            <input type="hidden" name="parent_comment_id" value="">
+                            <div class="form-group">
+                                <textarea class="form-control" name="body" id="comment-body" rows="3" placeholder="Add a comment..." required></textarea>
                             </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-                <div class="mt-2">
-                    <a href="#" class="add-comment-link" data-bs-toggle="collapse" data-bs-target="#add-comment-question-{{ question.id }}">Add a comment</a>
+                            <div class="d-flex justify-content-end mt-2">
+                                <button type="submit" class="btn btn-primary btn-sm">Add Comment</button>
+                            </div>
+                        </form>
+                    {% else %}
+                        <div class="alert alert-info">
+                            Please <a href="{{ url_for('auth.login') }}">login</a> to add a comment.
+                        </div>
+                    {% endif %}
                 </div>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Answer Count -->
-<div class="answer-count mb-3">
-    <div class="d-flex justify-content-between align-items-center">
-        <h2 class="h4">{{ answers|length }} Answer{{ 's' if answers|length != 1 else '' }}</h2>
-        <div class="answers-sort">
-            <select class="answer-sort-select" data-target="answers-list">
-                <option value="votes" selected>Sort by votes</option>
-                <option value="newest">Sort by newest</option>
-                <option value="oldest">Sort by oldest</option>
-            </select>
-        </div>
-    </div>
-</div>
-
-<!-- Answers -->
-<div class="answers-container" id="answers-list">
-    {% for answer in answers %}
-        <div class="answer{{ ' accepted' if answer.is_accepted }}" id="answer-{{ answer.id }}" data-score="{{ answer.score }}" data-created="{{ answer.created_at.isoformat() }}">
-            <div class="row">
-                <div class="col-1">
-                    <div class="vote-buttons" id="answer-vote-{{ answer.id }}">
-                        <button class="vote-button {{ 'voted' if current_user.is_authenticated and answer.user_vote == 1 }}" data-vote-type="up" data-answer-id="{{ answer.id }}">
-                            <i class="fa-solid fa-caret-up"></i>
-                        </button>
-                        <div class="vote-count">{{ answer.score }}</div>
-                        <button class="vote-button {{ 'voted' if current_user.is_authenticated and answer.user_vote == -1 }}" data-vote-type="down" data-answer-id="{{ answer.id }}">
-                            <i class="fa-solid fa-caret-down"></i>
-                        </button>
-                        {% if current_user.is_authenticated and current_user.id == question.author_id and not answer.is_accepted %}
-                            <form action="{{ url_for('answers.accept', answer_id=answer.id) }}" method="post" class="mt-2">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-outline-success btn-sm" title="Accept this answer">
-                                    <i class="fa-solid fa-check"></i>
-                                </button>
-                            </form>
-                        {% endif %}
-                        {% if answer.is_accepted %}
-                            <div class="accepted-mark mt-2" title="Accepted Answer">
-                                <i class="fa-solid fa-check"></i>
-                            </div>
-                        {% endif %}
+            
+            <!-- Unified thread of all top-level comments -->
+            <div class="mt-4">
+                <h5>{{ comments|length }} Responses</h5>
+                
+                <!-- Sort options -->
+                <div class="comment-sort-options mb-3">
+                    <span>Sort by:</span>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary comment-sort active" data-sort="score">Top</button>
+                        <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="newest">Newest</button>
+                        <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="oldest">Oldest</button>
+                        <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="controversial">Controversial</button>
                     </div>
                 </div>
                 
-                <div class="col-11">
-                    <div class="post-content">
-                        {{ answer.body_html|safe }}
-                    </div>
-                    
-                    <div class="post-menu">
-                        <a href="#" class="share-link" data-bs-toggle="modal" data-bs-target="#shareModal" data-url="{{ url_for('questions.view', question_id=question.id, _anchor='answer-' ~ answer.id, _external=True) }}">Share</a>
-                        {% if current_user.is_authenticated and (current_user.id == answer.author_id or current_user.is_admin) %}
-                            <a href="{{ url_for('answers.edit', answer_id=answer.id) }}">Edit</a>
-                            <a href="#" class="text-danger delete-link" data-bs-toggle="modal" data-bs-target="#deleteAnswerModal" data-answer-id="{{ answer.id }}">Delete</a>
-                        {% endif %}
-                        <a href="#" class="add-comment-link" data-bs-toggle="collapse" data-bs-target="#add-comment-answer-{{ answer.id }}">Add comment</a>
-                        {% if current_user.is_authenticated and current_user.is_admin %}
-                            <a href="#" class="ai-responder-button" data-content-type="answer" data-content-id="{{ answer.id }}">Add AI Response</a>
-                        {% endif %}
-                    </div>
-                    
-                    <!-- Author info -->
-                    <div class="user-info mt-3">
-                        <div class="d-flex align-items-center">
-                            <div class="ms-auto">
-                                <div class="bg-light p-2 rounded">
-                                    <div class="small text-muted">
-                                        {% if answer.created_at == answer.updated_at %}
-                                            answered {{ answer.created_at|timesince }}
-                                        {% else %}
-                                            edited {{ answer.updated_at|timesince }}
-                                        {% endif %}
-                                    </div>
-                                    <div class="d-flex align-items-center mt-1">
-                                        <img src="{{ answer.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ answer.author.username }}" alt="{{ answer.author.username }}" class="user-image me-2">
-                                        <div>
-                                            <a href="{{ url_for('auth.profile', username=answer.author.username) }}" class="fw-bold">{{ answer.author.username }}</a>
-                                            {% if answer.author.is_ai %}
-                                                <span class="ai-badge">AI</span>
-                                            {% endif %}
-                                            <div class="text-muted small">
-                                                <span class="fw-bold">{{ answer.author.reputation }}</span> reputation
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Comments collapse -->
-                    <div class="collapse" id="add-comment-answer-{{ answer.id }}">
-                        {% if current_user.is_authenticated %}
-                            <form class="comment-form mt-3" action="{{ url_for('answers.add_comment', answer_id=answer.id) }}" method="post">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <div class="mb-3">
-                                    <textarea class="form-control" name="comment_body" rows="2" required></textarea>
-                                    <small class="form-text text-muted">Use comments to ask for clarification or add relevant information.</small>
-                                </div>
-                                <button type="submit" class="btn btn-sm btn-primary">Add Comment</button>
-                            </form>
-                        {% else %}
-                            <div class="alert alert-warning mt-3">
-                                Please <a href="{{ url_for('auth.login') }}">log in</a> to add a comment.
-                            </div>
-                        {% endif %}
-                    </div>
-                    
-                    <!-- Comments list -->
-                    <div class="comments-list mt-3">
-                        {% if answer.comments %}
-                            <div class="comments-header">
-                                <span class="comments-toggle" data-target="answer-comments-{{ answer.id }}">
-                                    {% if answer.comments.count() > 3 %}
-                                        Show all {{ answer.comments.count() }} comments
-                                    {% else %}
-                                        {{ answer.comments.count() }} comment{{ 's' if answer.comments.count() != 1 else '' }}
-                                    {% endif %}
-                                </span>
-                                <div class="comments-sort">
-                                    <select class="comment-sort-select" data-target="answer-comments-{{ answer.id }}">
-                                        <option value="votes">Sort by votes</option>
-                                        <option value="newest">Sort by newest</option>
-                                        <option value="oldest" selected>Sort by oldest</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="answer-comments-{{ answer.id }}" class="comments-container collapsed">
-                                {% for comment in answer.comments %}
-                                    <div class="comment" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}">
-                                        <div class="comment-text">
-                                            {{ comment.html_content|safe }}
-                                            {% if current_user.is_authenticated %}
-                                                <div class="comment-vote float-end">
-                                                    <button class="btn btn-sm btn-link p-0 {{ 'text-primary' if current_user.is_authenticated and comment.user_vote == 1 }}" data-vote-type="up" data-comment-id="{{ comment.id }}">
-                                                        <i class="fa-solid fa-arrow-up"></i>
-                                                    </button>
-                                                    <span class="vote-count small">{{ comment.score }}</span>
-                                                </div>
-                                            {% endif %}
-                                        </div>
-                                        <div class="comment-meta">
-                                            – <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
-                                            {% if comment.author.is_ai %}
-                                                <span class="ai-badge">AI</span>
-                                            {% endif %}
-                                            <span class="text-muted">
-                                                {{ comment.created_at|timesince }}
-                                            </span>
-                                            {% if current_user.is_authenticated and (current_user.id == comment.author_id or current_user.is_admin) %}
-                                                <!-- Edit/Delete links omitted until routes are created -->
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="mt-2">
-                            <a href="#" class="add-comment-link" data-bs-toggle="collapse" data-bs-target="#add-comment-answer-{{ answer.id }}">Add a comment</a>
-                        </div>
-                    </div>
+                <!-- Unified thread of all top-level comments -->
+                <div class="thread-container">
+                    {% for comment in comments %}
+                        {{ render_comment(comment, level=0, parent_id=0, max_depth=7, max_shown=3) }}
+                    {% endfor %}
                 </div>
             </div>
         </div>
-    {% endfor %}
+    </div>
 </div>
 
-<!-- Post Answer -->
+<!-- Post Answer / Add Response -->
 {% if current_user.is_authenticated %}
     <div class="post-answer-container mt-5">
-        <h3>Your Answer</h3>
-        <form method="post" action="{{ url_for('answers.post', question_id=question.id) }}">
+        <h5>Your Answer</h5>
+        <form action="{{ url_for('comments.add') }}" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            
-            <div class="mb-3">
-                <ul class="nav nav-tabs" id="editorTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit-pane" type="button" role="tab">Edit</button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="preview-tab" data-bs-toggle="tab" data-bs-target="#preview-pane" type="button" role="tab">Preview</button>
-                    </li>
-                </ul>
-                <div class="tab-content" id="editorTabsContent">
-                    <div class="tab-pane fade show active" id="edit-pane" role="tabpanel">
-                        <textarea class="form-control markdown-editor" id="markdown-editor" name="body" rows="10" required></textarea>
-                    </div>
-                    <div class="tab-pane fade" id="preview-pane" role="tabpanel">
-                        <div class="preview-content" id="preview-content"></div>
-                    </div>
-                </div>
-                <small class="form-text text-muted">
-                    You can use markdown for formatting.
-                    <a href="https://www.markdownguide.org/cheat-sheet/" target="_blank">Markdown help</a>
-                </small>
+            <input type="hidden" name="content_type" value="question">
+            <input type="hidden" name="content_id" value="{{ question.id }}">
+            <input type="hidden" name="parent_comment_id" value="">
+            <div class="form-group">
+                <textarea class="form-control markdown-editor" name="body" id="body" rows="10" required></textarea>
+                <div class="form-text">Markdown formatting is supported. <a href="#" data-bs-toggle="modal" data-bs-target="#markdownHelpModal">Markdown help</a></div>
             </div>
-            
-            <div class="d-grid">
-                <button type="submit" class="btn btn-primary">Post Your Answer</button>
+            <div class="form-check my-3">
+                <input class="form-check-input" type="checkbox" name="subscribe" id="subscribe" checked>
+                <label class="form-check-label" for="subscribe">
+                    Subscribe to notifications for this question
+                </label>
             </div>
+            <button type="submit" class="btn btn-primary">Post Your Answer</button>
         </form>
     </div>
 {% else %}
-    <div class="mt-5">
-        <div class="alert alert-info">
-            You must <a href="{{ url_for('auth.login') }}">log in</a> to answer this question.
-        </div>
+    <div class="alert alert-info mt-4">
+        <p>You must be logged in to answer this question.</p>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Login</a>
+        <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary">Register</a>
     </div>
 {% endif %}
 
@@ -469,6 +457,25 @@
         </div>
     </div>
 </div>
+
+<!-- Continue Thread Modal -->
+<div class="modal fade" id="continueThreadModal" tabindex="-1" aria-labelledby="continueThreadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="continueThreadModalLabel">Continue this thread</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="continueThreadContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}

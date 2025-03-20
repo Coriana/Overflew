@@ -13,26 +13,31 @@ class Answer(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_accepted = db.Column(db.Boolean, default=False)
+    is_deleted = db.Column(db.Boolean, default=False)
 
-    # Relationships
-    comments = db.relationship('Comment', backref='answer', lazy='dynamic', cascade='all, delete-orphan')
-    votes = db.relationship('Vote', backref='answer', lazy='dynamic', cascade='all, delete-orphan')
+    # Relationships - removing votes relationship
+    comments = db.relationship('Comment', backref='answer', lazy='dynamic', 
+                               primaryjoin="and_(Comment.answer_id==Answer.id, Comment.parent_comment_id==None)")
 
     @property
     def score(self):
         """Calculate the score based on upvotes and downvotes"""
-        upvotes = sum(1 for vote in self.votes if vote.vote_type == 1)
-        downvotes = sum(1 for vote in self.votes if vote.vote_type == -1)
-        return upvotes - downvotes
+        # Since votes now belong to comments, this is a legacy method
+        # that will return 0 during migration
+        return 0
 
     @property
     def body_html(self):
         """Convert markdown to HTML for display"""
+        if self.is_deleted:
+            return "<em>[This answer has been deleted]</em>"
         return markdown.markdown(self.body, extensions=['extra', 'codehilite'])
 
     @property
     def html_content(self):
         """Convert markdown to HTML for display"""
+        if self.is_deleted:
+            return "<em>[This answer has been deleted]</em>"
         return markdown.markdown(self.body, extensions=['fenced_code', 'codehilite'])
 
     def accept(self):
@@ -44,6 +49,12 @@ class Answer(db.Model):
         
         # Then accept this answer
         self.is_accepted = True
+        db.session.commit()
+
+    def soft_delete(self):
+        """Marks the answer as deleted without removing it from the database"""
+        self.is_deleted = True
+        self.body = "[deleted]"
         db.session.commit()
 
     def __repr__(self):

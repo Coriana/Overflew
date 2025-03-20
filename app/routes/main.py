@@ -1,12 +1,11 @@
 from flask import Blueprint, render_template, redirect, url_for, request, current_app, flash
 from flask_login import current_user, login_required
-from sqlalchemy import or_, desc, case
+from sqlalchemy import or_, desc, case, func
 from sqlalchemy.types import TypeDecorator, Integer
 
 from app.models.user import User
 from app.models.question import Question
 from app.models.comment import Comment
-from app.models.answer import Answer
 from app.models.tag import Tag, QuestionTag
 from app.models.ai_personality import AIPersonality
 from app import db
@@ -24,7 +23,8 @@ def index():
     if sort == 'active':
         questions = Question.query.order_by(Question.updated_at.desc())
     elif sort == 'unanswered':
-        questions = Question.query.filter(~Question.answers.any())
+        # In our new model, "unanswered" means no top-level comments
+        questions = Question.query.filter(~Question.comments.any(Comment.parent_comment_id == None))
     elif sort == 'popular':
         questions = Question.query.order_by(Question.score.desc())
     else:  # default to newest
@@ -39,7 +39,7 @@ def index():
     # Get site statistics
     stats = {
         'question_count': Question.query.count(),
-        'answer_count': Answer.query.count(),
+        'answer_count': Comment.query.filter_by(parent_comment_id=None).count(),  # Top-level comments are answers
         'user_count': User.query.count(),
         'ai_count': User.query.filter_by(is_ai=True).count()
     }
@@ -63,7 +63,6 @@ def search():
         return redirect(url_for('main.index'))
     
     # Search for questions that match the query in title or content
-    # We're now explicitly searching in html_content as well as body
     question_query = Question.query.filter(
         or_(
             Question.title.ilike(f'%{query}%'),
@@ -80,18 +79,17 @@ def search():
         Tag.name.ilike(f'%{query}%')
     )
     
-    # Search for answers containing the query
-    answer_query = Answer.query.filter(
-        Answer.body.ilike(f'%{query}%')
+    # Search for comments containing the query
+    comment_query = Comment.query.filter(
+        Comment.body.ilike(f'%{query}%')
     )
     
-    # Get questions from the matching answers
-    questions_from_answers = Question.query.filter(
-        Question.id.in_([a.question_id for a in answer_query])
+    # Get questions from the matching comments
+    questions_from_comments = Question.query.filter(
+        Question.id.in_([c.question_id for c in comment_query])
     )
     
     # Combine the queries using union to avoid duplicates
-    # Note: Due to SQLite limitations with complex UNION queries, we'll use a different approach
     all_question_ids = set()
     
     # Add IDs from each query source
@@ -99,14 +97,14 @@ def search():
         all_question_ids.add(q.id)
     for q in tag_questions:
         all_question_ids.add(q.id)
-    for q in questions_from_answers:
+    for q in questions_from_comments:
         all_question_ids.add(q.id)
         
     # Manually check all content if we have no results
     if not all_question_ids:
         current_app.logger.warning(f"No results found for '{query}', trying manual search")
         all_questions = Question.query.all()
-        all_answers = Answer.query.all()
+        all_comments = Comment.query.all()
         
         # Search in questions (title and body)
         for q in all_questions:
@@ -114,11 +112,11 @@ def search():
                 all_question_ids.add(q.id)
                 current_app.logger.info(f"Found match in question {q.id}: {q.title}")
         
-        # Search in answers
-        for a in all_answers:
-            if query.lower() in a.body.lower():
-                all_question_ids.add(a.question_id)
-                current_app.logger.info(f"Found match in answer {a.id} for question {a.question_id}")
+        # Search in comments
+        for c in all_comments:
+            if query.lower() in c.body.lower():
+                all_question_ids.add(c.question_id)
+                current_app.logger.info(f"Found match in comment {c.id} for question {c.question_id}")
     
     # Get the combined query from the IDs we collected
     combined_query = Question.query.filter(Question.id.in_(all_question_ids))
@@ -163,14 +161,14 @@ def search():
     # Get data for the other tabs
     users = User.query.filter(User.username.ilike(f'%{query}%')).all()
     tags = Tag.query.filter(Tag.name.ilike(f'%{query}%')).all()
-    answers = Answer.query.filter(Answer.body.ilike(f'%{query}%')).all()
+    comments = Comment.query.filter(Comment.body.ilike(f'%{query}%')).all()
     
     # Get counts for each tab
     question_count = len(all_question_ids)
-    answer_count = len(answers)
+    comment_count = len(comments)
     user_count = len(users)
     tag_count = len(tags)
-    total_results = question_count + answer_count + user_count + tag_count
+    total_results = question_count + comment_count + user_count + tag_count
     
     # Paginate the results
     paginated_questions = combined_query.paginate(
@@ -182,13 +180,13 @@ def search():
     return render_template(
         'main/search.html',
         questions=paginated_questions,
-        answers=answers,
+        comments=comments,
         users=users,
         tags=tags,
         query=query,
         total_results=total_results,
         question_count=question_count,
-        answer_count=answer_count,
+        comment_count=comment_count,
         user_count=user_count,
         tag_count=tag_count,
         tab=tab,
@@ -229,7 +227,7 @@ def tag(tag_name):
     elif sort == 'votes':
         query = query.order_by(Question.score.desc())
     elif sort == 'unanswered':
-        query = query.filter(~Question.answers.any())
+        query = query.filter(~Question.comments.any(Comment.parent_comment_id == None))
     else:  # Default to newest
         query = query.order_by(Question.created_at.desc())
     
@@ -362,9 +360,8 @@ def ai_community():
     ai_personalities = []
     for user, personality in results.items:
         # Get post count for this user using count() instead of length
-        answers_count = db.session.query(db.func.count(Answer.id)).filter(Answer.user_id == user.id).scalar() or 0
         comments_count = db.session.query(db.func.count(Comment.id)).filter(Comment.user_id == user.id).scalar() or 0
-        post_count = answers_count + comments_count
+        post_count = comments_count
         
         # Combine user and personality data
         personality_data = {

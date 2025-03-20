@@ -11,6 +11,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize vote buttons
     initializeVoteButtons();
     
+    // Initialize comments
+    initializeCommentReplies();
+    
+    // Initialize comment sorting
+    initializeCommentSorting();
+    
+    // Initialize comment deletes
+    initializeCommentDeletes();
+    
+    // Initialize load more comments
+    initializeLoadMoreComments();
+    
     // Initialize AI response functionality
     initializeAIResponders();
     
@@ -19,17 +31,17 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.comments-toggle').forEach(toggle => {
         toggle.addEventListener('click', function() {
             const targetId = this.getAttribute('data-target');
-            const container = document.getElementById(targetId);
+            const commentsContainer = document.getElementById(targetId);
             
-            if (container.classList.contains('collapsed')) {
-                container.classList.remove('collapsed');
-                this.textContent = 'Hide comments';
-            } else {
-                container.classList.add('collapsed');
-                const commentCount = container.querySelectorAll('.comment').length;
-                this.textContent = commentCount > 3 
-                    ? `Show all ${commentCount} comments` 
-                    : `${commentCount} comment${commentCount !== 1 ? 's' : ''}`;
+            if (commentsContainer) {
+                commentsContainer.classList.toggle('collapsed');
+                
+                if (commentsContainer.classList.contains('collapsed')) {
+                    const count = commentsContainer.querySelectorAll('.comment').length;
+                    this.textContent = count > 3 ? `Show all ${count} comments` : `${count} comments`;
+                } else {
+                    this.textContent = 'Hide comments';
+                }
             }
         });
     });
@@ -39,31 +51,34 @@ document.addEventListener('DOMContentLoaded', function() {
         select.addEventListener('change', function() {
             const targetId = this.getAttribute('data-target');
             const container = document.getElementById(targetId);
-            const comments = Array.from(container.querySelectorAll('.comment'));
+            const topLevelComments = Array.from(container.querySelectorAll('.comment')).filter(comment => {
+                // Only get top-level comments
+                return !comment.closest('.replies');
+            });
             
             const sortType = this.value;
             
             // Sort comments based on selected option
             switch(sortType) {
                 case 'votes':
-                    comments.sort((a, b) => {
+                    topLevelComments.sort((a, b) => {
                         return parseInt(b.getAttribute('data-score')) - parseInt(a.getAttribute('data-score'));
                     });
                     break;
                 case 'newest':
-                    comments.sort((a, b) => {
+                    topLevelComments.sort((a, b) => {
                         return new Date(b.getAttribute('data-created')) - new Date(a.getAttribute('data-created'));
                     });
                     break;
                 case 'oldest':
-                    comments.sort((a, b) => {
+                    topLevelComments.sort((a, b) => {
                         return new Date(a.getAttribute('data-created')) - new Date(b.getAttribute('data-created'));
                     });
                     break;
             }
             
-            // Re-append sorted comments
-            comments.forEach(comment => {
+            // Re-append sorted top-level comments
+            topLevelComments.forEach(comment => {
                 container.appendChild(comment);
             });
         });
@@ -173,7 +188,6 @@ function handleVote(e) {
     const button = e.currentTarget;
     const voteType = button.dataset.voteType === 'up' ? 1 : -1;
     const questionId = button.dataset.questionId || null;
-    const answerId = button.dataset.answerId || null;
     const commentId = button.dataset.commentId || null;
     
     // Get the vote count element
@@ -196,7 +210,6 @@ function handleVote(e) {
         body: JSON.stringify({
             vote_type: newVoteType,
             question_id: questionId,
-            answer_id: answerId,
             comment_id: commentId
         }),
         credentials: 'same-origin'
@@ -285,7 +298,7 @@ function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 }
 
-// Initialize AI responders for questions and answers
+// Initialize AI responders for questions and comments
 function initializeAIResponders() {
     const aiResponderButtons = document.querySelectorAll('.ai-responder-button');
     
@@ -384,33 +397,31 @@ function handleAIResponseForm(e) {
 
 // Add AI response to the page
 function addAIResponseToPage(contentType, contentId, response) {
+    // Find the content container based on type
+    let container;
+    
     if (contentType === 'question') {
-        // Add answer to the answers list
-        const answersList = document.getElementById('answers-list');
-        if (answersList) {
-            const answerHtml = createAnswerHtml(response);
-            answersList.insertAdjacentHTML('afterbegin', answerHtml);
-            
-            // Apply syntax highlighting
-            document.querySelectorAll(`#answer-${response.id} pre code`).forEach((block) => {
-                hljs.highlightBlock(block);
-            });
-            
-            // Initialize vote buttons
-            document.querySelectorAll(`#answer-${response.id} .vote-button`).forEach(button => {
-                button.addEventListener('click', handleVote);
-            });
+        container = document.querySelector(`.question-container[data-question-id="${contentId}"] .comments-container`);
+    } else if (contentType === 'comment') {
+        container = document.querySelector(`.comment[id="comment-${contentId}"] .replies`);
+        
+        // If there's no replies container yet, create one
+        if (!container) {
+            const commentEl = document.querySelector(`.comment[id="comment-${contentId}"]`);
+            container = document.createElement('div');
+            container.className = 'replies';
+            commentEl.appendChild(container);
         }
-    } else {
-        // Add comment to the comments list
-        const commentsContainer = contentType === 'answer' 
-            ? document.querySelector(`#answer-${contentId} .comments-list`)
-            : document.querySelector(`#question-${contentId} .comments-list`);
-            
-        if (commentsContainer) {
-            const commentHtml = createCommentHtml(response);
-            commentsContainer.insertAdjacentHTML('beforeend', commentHtml);
-        }
+    }
+    
+    // If container is found, add the response
+    if (container) {
+        container.insertAdjacentHTML('beforeend', response);
+        
+        // Apply syntax highlighting to any code blocks
+        container.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightBlock(block);
+        });
     }
 }
 
@@ -470,20 +481,237 @@ function createAnswerHtml(answer) {
 
 // Create HTML for a comment
 function createCommentHtml(comment) {
-    return `
-    <div id="comment-${comment.id}" class="comment">
-        <div class="comment-text">
-            ${marked.parse(comment.body)}
+    const createdDate = new Date(comment.created_at);
+    
+    let commentHtml = `
+        <div class="comment" id="comment-${comment.id}" data-score="${comment.score}" data-created="${comment.created_at}">
+            <div class="comment-text">
+                ${comment.html_content}
+                <div class="comment-vote float-end">
+                    <button class="vote-button" data-vote-type="up" data-comment-id="${comment.id}">
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                    <span class="vote-count small">${comment.score}</span>
+                </div>
+            </div>
+            <div class="comment-meta">
+                – <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
+                ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                <span class="text-muted">
+                    ${timeSince(createdDate)}
+                </span>
+                <a href="#" class="reply-link text-muted small" data-comment-id="${comment.id}">
+                    reply
+                </a>
+                <a href="#" class="delete-comment-link text-muted text-danger small" data-comment-id="${comment.id}">
+                    delete
+                </a>
+                <button class="comment-collapse-toggle float-end" title="Collapse thread">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+            
+            <!-- Reply form (hidden by default) -->
+            <div class="reply-form-container collapse" id="reply-form-${comment.id}">
+                <form class="comment-form mt-2" action="/questions/${comment.question_id}/comments" method="post">
+                    <input type="hidden" name="csrf_token" value="${getCsrfToken()}">
+                    <input type="hidden" name="parent_comment_id" value="${comment.id}">
+                    <div class="mb-2">
+                        <textarea class="form-control form-control-sm" name="comment_body" rows="2" required placeholder="Reply to this comment..."></textarea>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-sm btn-primary">Reply</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cancel-reply">Cancel</button>
+                    </div>
+                </form>
+            </div>
+            <div class="replies collapsed">
+                ${comment.replies ? comment.replies.map(reply => createCommentHtml(reply)).join('') : ''}
+            </div>
         </div>
-        <div class="comment-meta">
-            <span class="fw-bold">${comment.author.username}</span>
-            ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
-            <span class="text-muted">
-                ${new Date(comment.created_at).toLocaleString()}
-            </span>
-        </div>
-    </div>
     `;
+    
+    return commentHtml;
+}
+
+// Helper function to format time since a date
+function timeSince(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    
+    let interval = Math.floor(seconds / 31536000);
+    if (interval >= 1) {
+        return interval + " year" + (interval === 1 ? "" : "s") + " ago";
+    }
+    
+    interval = Math.floor(seconds / 2592000);
+    if (interval >= 1) {
+        return interval + " month" + (interval === 1 ? "" : "s") + " ago";
+    }
+    
+    interval = Math.floor(seconds / 86400);
+    if (interval >= 1) {
+        return interval + " day" + (interval === 1 ? "" : "s") + " ago";
+    }
+    
+    interval = Math.floor(seconds / 3600);
+    if (interval >= 1) {
+        return interval + " hour" + (interval === 1 ? "" : "s") + " ago";
+    }
+    
+    interval = Math.floor(seconds / 60);
+    if (interval >= 1) {
+        return interval + " minute" + (interval === 1 ? "" : "s") + " ago";
+    }
+    
+    return "just now";
+}
+
+// Initialize comment reply functionality
+function initializeCommentReplies() {
+    // Handle reply links
+    document.querySelectorAll('.reply-link').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Don't allow replies if not authenticated
+            if (!window.appConfig.isAuthenticated) {
+                const currentUrl = window.location.pathname + window.location.search;
+                window.location.href = window.appConfig.loginUrl + '?next=' + encodeURIComponent(currentUrl);
+                return;
+            }
+            
+            const commentId = this.getAttribute('data-comment-id');
+            const replyForm = document.getElementById(`reply-form-${commentId}`);
+            
+            // Toggle reply form visibility
+            if (replyForm.classList.contains('show')) {
+                replyForm.classList.remove('show');
+            } else {
+                // Hide all other reply forms first
+                document.querySelectorAll('.reply-form-container.show').forEach(form => {
+                    form.classList.remove('show');
+                });
+                replyForm.classList.add('show');
+                
+                // Focus on the textarea
+                const textarea = replyForm.querySelector('textarea');
+                if (textarea) {
+                    textarea.focus();
+                }
+            }
+        });
+    });
+    
+    // Initialize collapsible comment threads
+    initializeCommentCollapseToggles();
+    
+    // Handle cancel reply buttons
+    document.querySelectorAll('.cancel-reply').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const replyForm = this.closest('.reply-form-container');
+            if (replyForm) {
+                replyForm.classList.remove('show');
+            }
+        });
+    });
+    
+    // Handle comment forms submission to include parent comment id
+    document.querySelectorAll('.comment-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            // Form submission is handled by the server
+            // We use the hidden parent_comment_id field already included in the form
+        });
+    });
+}
+
+// Initialize collapsible comment threads
+function initializeCommentCollapseToggles() {
+    document.querySelectorAll('.comment-collapse-toggle').forEach(toggle => {
+        toggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const comment = this.closest('.comment');
+            const replies = comment.querySelector('.replies');
+            
+            if (replies) {
+                if (replies.classList.contains('collapsed')) {
+                    // Expand
+                    replies.classList.remove('collapsed');
+                    this.innerHTML = '<i class="fa-solid fa-minus"></i>';
+                    this.setAttribute('title', 'Collapse thread');
+                } else {
+                    // Collapse
+                    replies.classList.add('collapsed');
+                    this.innerHTML = '<i class="fa-solid fa-plus"></i>';
+                    this.setAttribute('title', 'Expand thread');
+                }
+            }
+        });
+    });
+}
+
+// Initialize comment delete functionality
+function initializeCommentDeletes() {
+    document.querySelectorAll('.delete-comment-link').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            if (!window.appConfig.isAuthenticated) {
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to delete this comment? This action cannot be undone.')) {
+                return;
+            }
+            
+            const commentId = this.getAttribute('data-comment-id');
+            
+            // Send delete request to server
+            fetch(`/api/comments/${commentId}/delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken()
+                },
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Comment was deleted successfully, now update UI
+                    const comment = document.getElementById(`comment-${commentId}`);
+                    if (comment) {
+                        // Mark content as deleted
+                        const contentDiv = comment.querySelector('.comment-text');
+                        contentDiv.innerHTML = '<em>[deleted]</em>';
+                        
+                        // Remove the author info
+                        const authorLink = comment.querySelector('.comment-meta a');
+                        if (authorLink) {
+                            authorLink.parentNode.removeChild(authorLink);
+                        }
+                        
+                        // Remove delete button
+                        this.parentNode.removeChild(this);
+                        
+                        showNotification('success', 'Comment deleted successfully');
+                    }
+                } else {
+                    showNotification('error', data.message || 'Failed to delete comment');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('error', 'An error occurred while deleting the comment');
+            });
+        });
+    });
 }
 
 // Show an alert message
@@ -506,4 +734,193 @@ function showAlert(type, message) {
             alert.parentNode.removeChild(alert);
         }
     }, 5000);
+}
+
+// Initialize comment sorting functionality
+function initializeCommentSorting() {
+    document.querySelectorAll('.comment-sort-select').forEach(select => {
+        select.addEventListener('change', function() {
+            const targetId = this.getAttribute('data-target');
+            const container = document.getElementById(targetId);
+            if (!container) return;
+            
+            const sortType = this.value;
+            const comments = Array.from(container.querySelectorAll('.comment-level-0'));
+            
+            // Sort comments based on selected option
+            if (sortType === 'votes') {
+                comments.sort((a, b) => {
+                    const scoreA = parseInt(a.getAttribute('data-score'), 10) || 0;
+                    const scoreB = parseInt(b.getAttribute('data-score'), 10) || 0;
+                    return scoreB - scoreA; // Highest votes first
+                });
+            } else if (sortType === 'newest') {
+                comments.sort((a, b) => {
+                    const dateA = new Date(a.getAttribute('data-created')) || new Date(0);
+                    const dateB = new Date(b.getAttribute('data-created')) || new Date(0);
+                    return dateB - dateA; // Newest first
+                });
+            } else if (sortType === 'oldest') {
+                comments.sort((a, b) => {
+                    const dateA = new Date(a.getAttribute('data-created')) || new Date(0);
+                    const dateB = new Date(b.getAttribute('data-created')) || new Date(0);
+                    return dateA - dateB; // Oldest first
+                });
+            } else if (sortType === 'controversial') {
+                // A simple implementation - could be refined later
+                comments.sort((a, b) => {
+                    const scoreA = parseInt(a.getAttribute('data-score'), 10) || 0;
+                    const scoreB = parseInt(b.getAttribute('data-score'), 10) || 0;
+                    // If score is near zero, it might be controversial
+                    return Math.abs(scoreA) - Math.abs(scoreB); // Smallest absolute score first
+                });
+            }
+            
+            // Re-append comments in the new order
+            comments.forEach(comment => {
+                container.appendChild(comment);
+            });
+        });
+    });
+    
+    // Handle comment toggle (show/hide all comments)
+    document.querySelectorAll('.comments-toggle').forEach(toggle => {
+        toggle.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const container = document.getElementById(targetId);
+            if (container) {
+                container.classList.toggle('collapsed');
+                
+                // Update text based on state
+                if (container.classList.contains('collapsed')) {
+                    const commentCount = container.querySelectorAll('.comment-level-0').length;
+                    if (commentCount > 3) {
+                        this.textContent = `Show all ${commentCount} comments`;
+                    }
+                } else {
+                    this.textContent = 'Hide comments';
+                }
+            }
+        });
+    });
+}
+
+// Initialize load more comments functionality
+function initializeLoadMoreComments() {
+    // Handle "load more comments" buttons
+    document.querySelectorAll('.load-more-comments').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const parentId = this.getAttribute('data-parent-id');
+            const parentComment = document.getElementById(`comment-${parentId}`);
+            
+            if (!parentComment) return;
+            
+            const repliesContainer = parentComment.querySelector('.replies');
+            if (!repliesContainer) return;
+            
+            // Get the parent type and parent ID from the original comment
+            const parentType = parentComment.querySelector('.reply-link').getAttribute('data-parent-type');
+            const originalParentId = parentComment.querySelector('.reply-link').getAttribute('data-parent-id');
+            
+            // Show loading indicator
+            this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...';
+            
+            // Fetch more comments via AJAX
+            fetch(`/api/comments/children/${parentId}?skip=${repliesContainer.querySelectorAll('.comment').length}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.comments) {
+                        // Insert new comments before the "load more" button
+                        const currentButton = this;
+                        let remainingCount = 0;
+                        
+                        data.comments.forEach(comment => {
+                            // Create the comment HTML
+                            const commentHtml = createCommentHtml(comment);
+                            
+                            // Insert the comment before the load more button
+                            currentButton.insertAdjacentHTML('beforebegin', commentHtml);
+                        });
+                        
+                        // Update the count or remove the button if no more comments
+                        remainingCount = data.total_remaining;
+                        if (remainingCount > 0) {
+                            this.innerHTML = `<i class="fa-solid fa-angle-down"></i> Load ${remainingCount} more replies`;
+                        } else {
+                            this.remove();
+                        }
+                        
+                        // Initialize event handlers for the new comments
+                        initializeCommentReplies();
+                        initializeCommentCollapseToggles();
+                        initializeCommentDeletes();
+                        initializeVoteButtons();
+                    } else {
+                        this.innerHTML = 'Error loading comments';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading more comments:', error);
+                    this.innerHTML = 'Error loading comments';
+                });
+        });
+    });
+    
+    // Handle "continue this thread" indicators
+    document.querySelectorAll('.comment-collapsed-indicator').forEach(indicator => {
+        indicator.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const parentId = this.getAttribute('data-parent-id');
+            
+            // Open a modal or expand in-place
+            const modal = new bootstrap.Modal(document.getElementById('continueThreadModal'));
+            
+            // Set the parent comment ID in the modal
+            document.getElementById('continueThreadContent').setAttribute('data-parent-id', parentId);
+            
+            // Load the content
+            loadContinuedThreadContent(parentId);
+            
+            // Show the modal
+            modal.show();
+        });
+    });
+}
+
+// Load continued thread content
+function loadContinuedThreadContent(parentId) {
+    const contentContainer = document.getElementById('continueThreadContent');
+    
+    // Show loading indicator
+    contentContainer.innerHTML = '<div class="text-center p-4"><i class="fa-solid fa-spinner fa-spin"></i> Loading comments...</div>';
+    
+    // Fetch nested comments via AJAX
+    fetch(`/api/comments/thread/${parentId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.comments) {
+                contentContainer.innerHTML = '';
+                
+                // Recursively create the thread HTML
+                data.comments.forEach(comment => {
+                    const commentHtml = createCommentHtml(comment);
+                    contentContainer.insertAdjacentHTML('beforeend', commentHtml);
+                });
+                
+                // Initialize event handlers for the loaded comments
+                initializeCommentReplies();
+                initializeCommentCollapseToggles();
+                initializeCommentDeletes();
+                initializeVoteButtons();
+            } else {
+                contentContainer.innerHTML = '<div class="alert alert-danger">Error loading comments</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading thread comments:', error);
+            contentContainer.innerHTML = '<div class="alert alert-danger">Error loading comments</div>';
+        });
 }

@@ -15,12 +15,26 @@ class Question(db.Model):
     views = db.Column(db.Integer, default=0)
     is_closed = db.Column(db.Boolean, default=False)
     close_reason = db.Column(db.String(120))
+    is_deleted = db.Column(db.Boolean, default=False)
 
     # Relationships
-    answers = db.relationship('Answer', backref='question', lazy='dynamic', cascade='all, delete-orphan')
-    comments = db.relationship('Comment', backref='question', lazy='dynamic', cascade='all, delete-orphan')
+    # Note: No user relationship here as it's defined in the User model with backref='author'
+    comments = db.relationship('Comment', backref='question', lazy='dynamic',
+                              primaryjoin="Comment.question_id==Question.id")
     tags = db.relationship('QuestionTag', backref='question', lazy='dynamic', cascade='all, delete-orphan')
     votes = db.relationship('Vote', backref='question', lazy='dynamic', cascade='all, delete-orphan')
+
+    @property
+    def answers(self):
+        """Get all top-level comments (answers) for this question"""
+        from app.models.comment import Comment
+        return Comment.query.filter_by(
+            question_id=self.id,
+            parent_comment_id=None
+        )
+    
+    # Since answers and top-level comments are now the same thing in our model,
+    # we don't need a separate top_comments property
 
     @property
     def score(self):
@@ -32,17 +46,28 @@ class Question(db.Model):
     @property
     def body_html(self):
         """Convert markdown to HTML for display"""
+        if self.is_deleted:
+            return "<em>[This question has been deleted]</em>"
         return markdown.markdown(self.body, extensions=['extra', 'codehilite'])
-
+    
     @property
-    def html_content(self):
-        """Convert markdown to HTML for display"""
-        return markdown.markdown(self.body, extensions=['fenced_code', 'codehilite'])
-
+    def answer_count(self):
+        """Get the number of answers (top-level comments) for this question"""
+        return self.answers.count()
+    
     def increment_view(self):
-        """Increment the view count of the question"""
+        """Increment the view count for this question"""
         self.views += 1
+        db.session.commit()
+        
+    def soft_delete(self):
+        """Marks the question as deleted without removing it from the database"""
+        self.is_deleted = True
+        self.body = "[deleted]"
+        self.title = "[deleted]"
         db.session.commit()
 
     def __repr__(self):
+        if self.is_deleted:
+            return f'<Question {self.id} [deleted]>'
         return f'<Question {self.title}>'

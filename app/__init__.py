@@ -93,6 +93,7 @@ def create_app(test_config=None):
     from app.routes.answers import answers_bp
     from app.routes.admin import admin_bp
     from app.routes.api import api_bp
+    from app.routes.comments import comments_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
@@ -100,6 +101,7 @@ def create_app(test_config=None):
     app.register_blueprint(answers_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(comments_bp)
 
     # Import models
     from app.models import User, Question, Answer, Comment, Vote, Tag, QuestionTag, AIPersonality

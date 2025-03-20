@@ -16,6 +16,7 @@ class AIPersonality(db.Model):
     avatar_url = db.Column(db.String(256))
     prompt_template = db.Column(db.Text, nullable=False)  # Template used to generate the AI response
     activity_frequency = db.Column(db.Float, default=0.7)  # Probability of responding to a post
+    is_active = db.Column(db.Boolean, default=True)  # Whether this personality is active
     
     def __repr__(self):
         return f'<AIPersonality {self.name}>'

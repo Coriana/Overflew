@@ -54,7 +54,48 @@ def ask():
         db.session.commit()
         
         # Trigger AI responses asynchronously
-        queue_task(ai_respond_to_question, question.id)
+        from app.models.ai_personality import AIPersonality
+        from app.models.user import User
+        
+        # Get AI personalities that are active
+        personalities = AIPersonality.query.filter_by(is_active=True).all()
+        
+        # If no active personalities found, check for any personalities
+        if not personalities:
+            personalities = AIPersonality.query.all()
+            print(f"No active AI personalities found, using any available ({len(personalities)} found)")
+        
+        # If still no personalities, skip AI answer
+        if personalities:
+            # Select a random personality to respond
+            import random
+            personality = random.choice(personalities)
+            print(f"Selected AI personality for initial answer: {personality.name}")
+            
+            # Find the corresponding AI user
+            ai_user = User.query.filter_by(username=personality.name).first()
+            if not ai_user:
+                print(f"Creating AI user for {personality.name}")
+                from werkzeug.security import generate_password_hash
+                ai_user = User(
+                    username=personality.name,
+                    email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                    password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                    is_ai=True,
+                    ai_personality_id=personality.id
+                )
+                db.session.add(ai_user)
+                db.session.commit()
+            
+            # Generate AI answer using the selected personality
+            queue_task(
+                _generate_ai_answer, 
+                f"Question: {question.title}\n\n{question.body}", 
+                ai_user.id,  # Use AI user id instead of current_user.id
+                question_id=question.id
+            )
+        else:
+            print("No AI personalities found, skipping initial AI answer")
         
         flash('Your question has been posted', 'success')
         return redirect(url_for('questions.view', question_id=question.id))
@@ -62,15 +103,60 @@ def ask():
     return render_template('questions/ask.html')
 
 
-@questions_bp.route('/<int:question_id>', methods=['GET'])
+@questions_bp.route('/<int:question_id>')
 def view(question_id):
     question = Question.query.get_or_404(question_id)
     question.increment_view()  # Increment view count
     
-    # Get answers for this question
-    answers = question.answers.all()
+    # Get all top-level comments (both answers and comments) for this question
+    top_level_comments = Comment.query.filter_by(
+        question_id=question_id, 
+        parent_comment_id=None
+    ).all()
     
-    return render_template('questions/view.html', question=question, answers=answers)
+    # Attach user vote information to question and comments if user is logged in
+    if current_user.is_authenticated:
+        # Get user's vote on the question if any
+        question_vote = Vote.query.filter_by(
+            user_id=current_user.id,
+            question_id=question_id,
+            comment_id=None
+        ).first()
+        question.user_vote = question_vote.vote_type if question_vote else 0
+        
+        # Get all comment IDs for this question to fetch votes in a single query
+        comment_ids = []
+        
+        def collect_comment_ids(comments):
+            for comment in comments:
+                comment_ids.append(comment.id)
+                if comment.replies:
+                    collect_comment_ids(comment.replies.all())
+        
+        collect_comment_ids(top_level_comments)
+        
+        # Fetch all votes by this user for these comments in a single query
+        if comment_ids:
+            comment_votes = Vote.query.filter(
+                Vote.user_id == current_user.id,
+                Vote.comment_id.in_(comment_ids)
+            ).all()
+            
+            # Create a mapping of comment_id to vote_type
+            vote_map = {vote.comment_id: vote.vote_type for vote in comment_votes}
+            
+            # Attach vote information to each comment
+            def attach_vote_info(comments):
+                for comment in comments:
+                    comment.user_vote = vote_map.get(comment.id, 0)
+                    if comment.replies:
+                        attach_vote_info(comment.replies.all())
+            
+            attach_vote_info(top_level_comments)
+    
+    return render_template('questions/view.html', 
+                          question=question, 
+                          comments=top_level_comments)
 
 
 @questions_bp.route('/<int:question_id>/edit', methods=['GET', 'POST'])
@@ -135,8 +221,7 @@ def delete(question_id):
     if question.user_id != current_user.id and not current_user.is_admin:
         abort(403)
     
-    db.session.delete(question)
-    db.session.commit()
+    question.soft_delete()
     
     flash('Your question has been deleted', 'success')
     return redirect(url_for('main.index'))
@@ -186,418 +271,545 @@ def vote(question_id):
     db.session.commit()
     
     # Trigger AI responses to the vote asynchronously
-    queue_task(ai_respond_to_vote, question_id, None, None, vote_type, current_user.id)
+    queue_task(ai_respond_to_vote, vote)
     
     return redirect(url_for('questions.view', question_id=question_id))
 
 
-@questions_bp.route('/<int:question_id>/comment', methods=['POST'])
+@questions_bp.route('/<int:question_id>/comments/add', methods=['POST'])
 @login_required
 def add_comment(question_id):
-    question = Question.query.get_or_404(question_id)
-    comment_body = request.form.get('comment_body')
+    body = request.form.get('body')
+    parent_comment_id = request.form.get('parent_comment_id')
     
-    if not comment_body:
-        flash('Comment cannot be empty', 'danger')
+    if not body:
+        flash('Comment body cannot be empty', 'danger')
         return redirect(url_for('questions.view', question_id=question_id))
     
+    # Create new comment
     comment = Comment(
-        body=comment_body,
+        body=body,
         user_id=current_user.id,
-        question_id=question_id
+        question_id=question_id,
+        parent_comment_id=parent_comment_id if parent_comment_id else None
     )
     
     db.session.add(comment)
     db.session.commit()
     
-    # Trigger AI responses to the comment
-    queue_task(ai_respond_to_comment, comment.id, question_id=question_id)
-    
     flash('Your comment has been added', 'success')
     return redirect(url_for('questions.view', question_id=question_id))
 
 
-def ai_respond_to_question(question_id):
+def _generate_ai_answer(prompt, ai_user_id=None, ai_personality_id=None, 
+                       question_id=None, comment_id=None, answer_id=None):
     """
-    Queue AI personalities to respond to a given question.
-
-    Retrieves the question by its ID and selects AI personalities that 
-    should respond based on their activity frequency. A minimum of 7 AI 
-    personalities is ensured to respond, unless fewer are available. 
-    Each selected AI personality formats a prompt with the question context 
-    and queues a task to generate an AI answer in parallel.
-
-    :param question_id: The ID of the question to which AI personalities should respond.
+    Generate an AI answer based on the prompt and save it to the database
     """
+    from app.models.user import User
+    from app.models.ai_personality import AIPersonality
     
-    question = Question.query.get(question_id)
-    if not question:
-        current_app.logger.warning(f"Question {question_id} not found for AI response")
-        return
+    # If AI user is provided, make sure it exists and is an AI
+    ai_user = None
+    personality = None
     
-    # Get all AI personalities
-    ai_personalities = AIPersonality.query.all()
-    
-    # Filter to only personalities that should respond
-    responding_ais = [ai for ai in ai_personalities if ai.should_respond()]
-    
-    # Ensure we have at least 7 AIs responding (or all available if less than 7)
-    min_responses = 7
-    if len(responding_ais) > min_responses:
-        num_responses = max(min_responses, random.randint(min_responses, len(responding_ais)))
-        responding_ais = random.sample(responding_ais, num_responses)
-    
-    current_app.logger.info(f"Selected {len(responding_ais)} AI personalities to respond to question {question_id}")
-    
-    # Queue each AI response to run in parallel
-    for ai_personality in responding_ais:
-        # Get the AI user associated with this personality
-        ai_user = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).first()
-        if not ai_user:
-            current_app.logger.warning(f"No AI user found for personality {ai_personality.id}")
-            continue
-        
-        # Format the prompt
-        context = f"Title: {question.title}\nTags: {', '.join([tag.tag.name for tag in question.tags])}\n"
-        prompt = ai_personality.format_prompt(question.body, context)
-        
-        # Queue this response task to run in parallel
-        queue_task(
-            _generate_ai_answer, 
-            prompt, 
-            ai_user.id, 
-            question.id, 
-            None, 
-            None, 
-            ai_personality.id,
-            parallel=True  # This enables true parallel processing
-        )
-
-
-def _generate_ai_answer(prompt, ai_user_id, question_id=None, answer_id=None, comment_id=None, ai_personality_id=None):
-    """
-    Generate an AI response to a prompt, vote if needed, and submit as an answer or comment
-    
-    :param prompt: The prompt to generate a response for
-    :param ai_user_id: The ID of the AI user to generate the response as
-    :param question_id: The ID of the question to answer, if applicable
-    :param answer_id: The ID of the answer to comment on, if applicable
-    :param comment_id: The ID of the comment to reply to, if applicable
-    :param ai_personality_id: The ID of the AI personality to use when generating the response
-    """
-    try:
-        # Get the AI personality
-        ai_personality = AIPersonality.query.get(ai_personality_id)
-        if not ai_personality:
-            current_app.logger.error(f"AI personality {ai_personality_id} not found")
-            return
+    if ai_personality_id:
+        personality = AIPersonality.query.get(ai_personality_id)
+        if personality:
+            print(f"Using AI personality: {personality.name}")
+            # Log the personality template for debugging
+            print(f"Personality template: {personality.prompt_template}")
             
-        # Get the AI user associated with this personality
-        ai_user = User.query.get(ai_user_id)
-        if not ai_user:
-            current_app.logger.error(f"AI user {ai_user_id} not found")
-            return
-        # Get response from LLM service
-        current_app.logger.info(f"Generating AI response for prompt from AI {ai_personality.name}")
-        response = get_completion(prompt, max_tokens=4096)
-        ai_response = response.strip()
-        current_app.logger.info(f"AI response generated: {len(ai_response)} characters")
-        
-        # Determine if the AI should upvote, downvote, or not vote
-        vote_type = 0
-        content = None
-        
-        if question_id:
-            content = Question.query.get(question_id).body
-        elif answer_id:
-            content = Answer.query.get(answer_id).body
-        elif comment_id:
-            content = Comment.query.get(comment_id).body
-            
-        if content:
-            vote_type = determine_vote_type(ai_personality, content)
-        
-        # Submit the vote if needed
-        if vote_type != 0:
-            # Check if the user has already voted on this content
-            existing_vote = None
-            if question_id:
-                existing_vote = Vote.query.filter_by(user_id=ai_user_id, question_id=question_id).first()
-            elif answer_id:
-                existing_vote = Vote.query.filter_by(user_id=ai_user_id, answer_id=answer_id).first()
-            elif comment_id:
-                existing_vote = Vote.query.filter_by(user_id=ai_user_id, comment_id=comment_id).first()
-                
-            # Only create a new vote if one doesn't already exist
-            if not existing_vote:
-                vote = Vote(
-                    user_id=ai_user_id,
-                    vote_type=vote_type
+            # Check if there's a user for this personality
+            ai_user = User.query.filter_by(ai_personality_id=personality.id).first()
+            if not ai_user:
+                # Create a user for this personality
+                print(f"Creating new AI user for personality: {personality.name}")
+                from werkzeug.security import generate_password_hash
+                ai_user = User(
+                    username=personality.name,
+                    email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                    password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                    is_ai=True,
+                    ai_personality_id=personality.id
                 )
-                
-                if question_id:
-                    vote.question_id = question_id
-                elif answer_id:
-                    vote.answer_id = answer_id
-                elif comment_id:
-                    vote.comment_id = comment_id
-                    
-                db.session.add(vote)
-            elif existing_vote.vote_type != vote_type:
-                # Update the existing vote if the vote type has changed
-                existing_vote.vote_type = vote_type
-                existing_vote.created_at = datetime.utcnow()
-        
-        # Submit an answer or comment based on the target
-        if question_id and not answer_id and not comment_id:
-            # Answering a question
-            answer = Answer(
-                body=ai_response,
-                user_id=ai_user_id,
-                question_id=question_id
-            )
-            db.session.add(answer)
-            current_app.logger.info(f"Added AI answer to question {question_id}")
-            
-        elif answer_id:
-            # Commenting on an answer
-            comment = Comment(
-                body=ai_response,
-                user_id=ai_user_id,
-                answer_id=answer_id
-            )
-            db.session.add(comment)
-            current_app.logger.info(f"Added AI comment to answer {answer_id}")
-            
-        elif comment_id:
-            # Replying to a comment
-            original = Comment.query.get(comment_id)
-            reply = Comment(
-                body=ai_response,
-                user_id=ai_user_id
-            )
-            
-            if original.question_id:
-                reply.question_id = original.question_id
-            else:
-                reply.answer_id = original.answer_id
-                
-            db.session.add(reply)
-            current_app.logger.info(f"Added AI reply to comment {comment_id}")
-        
-        # Commit all changes
-        db.session.commit()
-        
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error generating AI response: {str(e)}")
-
-
-def ai_respond_to_vote(question_id, answer_id, comment_id, vote_type, voter_id):
-    """
-    Have AI personalities respond to votes on questions, answers, and comments
-    
-    :param question_id: The ID of the question that was voted on, if applicable
-    :param answer_id: The ID of the answer that was voted on, if applicable
-    :param comment_id: The ID of the comment that was voted on, if applicable
-    :param vote_type: The type of vote that was cast (1 for upvote, -1 for downvote)
-    :param voter_id: The ID of the user that cast the vote
-    """
-    # Determine which content was voted on
-    content = None
-    content_id = None
-    content_type = None
-    
-    if question_id:
-        content = Question.query.get(question_id)
-        content_id = question_id
-        content_type = "question"
-    elif answer_id:
-        content = Answer.query.get(answer_id)
-        content_id = answer_id
-        content_type = "answer"
-    elif comment_id:
-        content = Comment.query.get(comment_id)
-        content_id = comment_id
-        content_type = "comment"
-    
-    if not content:
-        current_app.logger.warning("No content found for AI vote response")
-        return
-    
-    # Get some AI personalities to potentially respond to the vote
-    ai_personalities = AIPersonality.query.all()
-    random.shuffle(ai_personalities)
-    
-    # Have a small chance for an AI to respond
-    if random.random() < 0.3:  # 30% chance
-        # Pick a random AI
-        ai_personality = random.choice(ai_personalities) if ai_personalities else None
-        if not ai_personality:
-            return
-            
-        # Get the AI user
-        ai_user = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).first()
-        if not ai_user:
-            return
-            
-        # Format context based on what was voted on
-        voter = User.query.get(voter_id)
-        voter_name = voter.username if voter else "Someone"
-        
-        context = f"{voter_name} {'upvoted' if vote_type > 0 else 'downvoted'} "
-        
-        if content_type == "question":
-            question = Question.query.get(question_id)
-            context += f"the question: '{question.title}'"
-            target_id = question_id
-            prompt = ai_personality.format_prompt(question.body, context)
-            
-        elif content_type == "answer":
-            answer = Answer.query.get(answer_id)
-            question = Question.query.get(answer.question_id)
-            context += f"an answer to the question: '{question.title}'"
-            target_id = answer_id
-            prompt = ai_personality.format_prompt(answer.body, context)
-            
-        else:  # comment
-            comment = content
-            if comment.question_id:
-                question = Question.query.get(comment.question_id)
-                context += f"a comment on the question: '{question.title}'"
-            else:
-                answer = Answer.query.get(comment.answer_id)
-                question = Question.query.get(answer.question_id)
-                context += f"a comment on an answer to: '{question.title}'"
-            target_id = comment_id
-            prompt = ai_personality.format_prompt(comment.body, context)
-        
-        # Queue the AI response generation to run in parallel
-        if content_type == "question":
-            queue_task(
-                _generate_ai_answer, 
-                prompt, 
-                ai_user.id, 
-                target_id, 
-                None, 
-                None, 
-                ai_personality.id,
-                parallel=True
-            )
-        elif content_type == "answer":
-            queue_task(
-                _generate_ai_answer, 
-                prompt, 
-                ai_user.id, 
-                None, 
-                target_id, 
-                None, 
-                ai_personality.id,
-                parallel=True
-            )
-        else:  # comment
-            queue_task(
-                _generate_ai_answer, 
-                prompt, 
-                ai_user.id, 
-                None, 
-                None, 
-                target_id, 
-                ai_personality.id,
-                parallel=True
-            )
-
-
-def ai_respond_to_comment(comment_id, question_id=None, answer_id=None):
-    """
-    Have AI personalities respond to comments on questions or answers.
-
-    :param comment_id: The ID of the comment to which the AI should respond.
-    :param question_id: The ID of the question associated with the comment, if applicable.
-    :param answer_id: The ID of the answer associated with the comment, if applicable.
-    """
-    # Get the comment
-    comment = Comment.query.get(comment_id)
-    if not comment:
-        return
-
-    # Get the parent content
-    parent = None
-    if question_id:
-        parent = Question.query.get(question_id)
-    elif answer_id:
-        parent = Answer.query.get(answer_id)
-    elif comment.question_id:
-        parent = Question.query.get(comment.question_id)
-        question_id = comment.question_id
-    elif comment.answer_id:
-        parent = Answer.query.get(comment.answer_id)
-        answer_id = comment.answer_id
-
-    if not parent:
-        return
-
-    # Small chance for an AI to respond
-    if random.random() < 0.4:  # 40% chance
-        # Get AI personalities
-        ai_personalities = AIPersonality.query.all()
-        if not ai_personalities:
-            return
-
-        # Pick a random AI
-        ai_personality = random.choice(ai_personalities)
-
-        # Get the AI user
-        ai_user = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).first()
-        if not ai_user:
-            return
-
-        # Format context based on comment location
-        if question_id:
-            question = Question.query.get(question_id)
-            context = f"Question: {question.title}\nComment: {comment.body}"
+                db.session.add(ai_user)
+                db.session.commit()
         else:
-            answer = Answer.query.get(answer_id)
-            question = Question.query.get(answer.question_id)
-            context = f"Question: {question.title}\nAnswer: {answer.body}\nComment: {comment.body}"
-
-        prompt = ai_personality.format_prompt(comment.body, context)
-
-        # Queue the AI response generation to run in parallel
-        queue_task(
-            _generate_ai_answer,
-            prompt,
-            ai_user.id,
-            None,
-            None,
-            comment_id,
-            ai_personality.id,
-            parallel=True
-        )
-
-
-def determine_vote_type(ai_personality, content):
-    """
-    Determine if an AI personality should upvote, downvote, or not vote
-    Based on AI personality traits and the content
-    """
-    helpfulness = ai_personality.helpfulness_level
-    strictness = ai_personality.strictness_level
+            print(f"AI personality ID {ai_personality_id} not found")
     
-    # Simple algorithm: high strictness makes downvotes more likely
-    # This is a placeholder - in a real implementation you'd use the AI to decide
+    # If we don't have an AI user yet but we have an ID, try to get it
+    if not ai_user and ai_user_id:
+        ai_user = User.query.get(ai_user_id)
+        if ai_user and ai_user.is_ai and ai_user.ai_personality_id:
+            personality = AIPersonality.query.get(ai_user.ai_personality_id)
+            if personality:
+                print(f"Found AI personality {personality.name} for user {ai_user.username}")
+                # Log the personality template for debugging
+                print(f"Personality template: {personality.prompt_template}")
+    
+    # If we still don't have an AI user or personality, use any AI user or create a default
+    if not ai_user or not personality:
+        print("No specific AI personality specified, finding or creating one")
+        # Try to find an active AI personality
+        personalities = AIPersonality.query.filter_by(is_active=True).all()
+        
+        if not personalities:
+            # If no active ones, use any
+            personalities = AIPersonality.query.all()
+        
+        if personalities:
+            # Use a random personality
+            import random
+            personality = random.choice(personalities)
+            print(f"Selected random AI personality: {personality.name}")
+            # Log the personality template for debugging
+            print(f"Personality template: {personality.prompt_template}")
+            
+            # Check if there's a user for this personality
+            ai_user = User.query.filter_by(ai_personality_id=personality.id).first()
+            if not ai_user:
+                # Create a user for this personality
+                print(f"Creating new AI user for personality: {personality.name}")
+                from werkzeug.security import generate_password_hash
+                ai_user = User(
+                    username=personality.name,
+                    email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                    password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                    is_ai=True,
+                    ai_personality_id=personality.id
+                )
+                db.session.add(ai_user)
+                db.session.commit()
+        else:
+            # Create a default AI personality and user
+            print("No AI personalities found, creating default")
+            personality = AIPersonality(
+                name="AI Assistant",
+                description="A helpful AI assistant",
+                expertise="General knowledge,Programming,Problem solving",
+                personality_traits="Helpful,Friendly,Knowledgeable",
+                interaction_style="Conversational",
+                helpfulness_level=9,
+                strictness_level=5,
+                verbosity_level=7,
+                prompt_template="You are a helpful AI assistant providing information on {{content}}",
+                is_active=True
+            )
+            db.session.add(personality)
+            db.session.commit()
+            
+            # Create a user for the default personality
+            from werkzeug.security import generate_password_hash
+            ai_user = User(
+                username=personality.name,
+                email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                is_ai=True,
+                ai_personality_id=personality.id
+            )
+            db.session.add(ai_user)
+            db.session.commit()
+    
+    # Now use the personality's template to format the prompt
+    formatted_prompt = personality.prompt_template
+    # Replace the {{content}} variable with our prompt
+    formatted_prompt = formatted_prompt.replace('{{content}}', prompt)
+    # If there's no context, replace with empty string
+    formatted_prompt = formatted_prompt.replace('{{context}}', '')
+    
+    # For any other template variables, use personality attributes
+    formatted_prompt = formatted_prompt.replace('{{name}}', personality.name)
+    formatted_prompt = formatted_prompt.replace('{{description}}', personality.description)
+    formatted_prompt = formatted_prompt.replace('{{expertise}}', personality.expertise)
+    formatted_prompt = formatted_prompt.replace('{{personality_traits}}', personality.personality_traits)
+    
+    # Log the actual prompt sent to the model
+    print("FINAL PROMPT FOR AI:")
+    print("=" * 40)
+    print(formatted_prompt)
+    print("=" * 40)
+    
+    # Get completion from LLM service
+    from app.services.llm_service import get_completion
+    response = get_completion(formatted_prompt)
+    
+    if not response:
+        print("Failed to get a response from the LLM service")
+        return None
+    
+    # Create the answer or comment
+    result = None
+    print(f"Creating AI response from {ai_user.username} (id: {ai_user.id})")
+    
+    if question_id and not comment_id:
+        # Create a comment as an answer to the question
+        result = Comment(
+            body=response,
+            user_id=ai_user.id,
+            question_id=question_id,
+            parent_comment_id=None
+        )
+        db.session.add(result)
+        print(f"Added AI answer to question {question_id}")
+    elif comment_id:
+        # Get the original comment
+        original = Comment.query.get_or_404(comment_id)
+        
+        # Create a reply to the comment
+        reply = Comment(
+            body=response,
+            user_id=ai_user.id,
+            question_id=original.question_id,
+            parent_comment_id=comment_id
+        )
+        db.session.add(reply)
+        result = reply
+        print(f"Added AI reply to comment {comment_id}")
+    
+    db.session.commit()
+    return result
+
+
+def ai_respond_to_vote(vote):
+    """
+    Generate an AI response to a vote on a question or comment.
+    :param vote: The vote object
+    :return: The generated response, if any
+    """
+    from app.models.user import User
+    from app.models.ai_personality import AIPersonality
     import random
     
-    if 'error' in content.lower() or 'bug' in content.lower():
-        # Higher chance of strictness kicking in
-        strictness_factor = strictness / 10
-        if random.random() < strictness_factor:
-            return -1
+    # Add the vote to the session if it's not already in a session
+    # This prevents SQLAlchemy warnings about objects not being in session
+    from sqlalchemy.orm.util import object_state
+    if object_state(vote).session is None:
+        db.session.add(vote)
     
-    # General helpfulness makes upvotes more likely
-    helpfulness_factor = helpfulness / 10
-    if random.random() < helpfulness_factor:
-        return 1
+    # Use a no_autoflush block to prevent the temporary vote from being flushed to the database
+    # This prevents UNIQUE constraint errors with existing votes
+    with db.session.no_autoflush:
+        # Don't respond to AI votes to prevent loops
+        voter = User.query.get(vote.user_id)
+        if voter.is_ai:
+            print(f"Not responding to vote from AI user {voter.username}")
+            return None
+        
+        # Don't respond to downvotes on content created by the same voter (self-correction)
+        if vote.vote_type == -1:
+            if (vote.question_id and vote.question.author.id == vote.user_id) or \
+               (vote.comment_id and vote.comment.author.id == vote.user_id):
+                print(f"Not responding to self-downvote")
+                return None
+        
+        # Determine content type and get the content
+        content_type = None
+        content = None
+        question_id = None
+        comment_id = None
+        
+        if vote.question_id:
+            content_type = "question"
+            content = vote.question
+            if content:  # Check if question exists
+                question_id = content.id
+            else:
+                print(f"Question not found for vote {vote.id}")
+                return None
+        elif vote.comment_id:
+            content_type = "comment"
+            content = vote.comment
+            if content:  # Check if comment exists
+                comment_id = content.id
+                question_id = content.question_id
+            else:
+                print(f"Comment not found for vote {vote.id}")
+                return None
+        
+        if not content:
+            print(f"Content not found for vote {vote.id}")
+            return None
+        
+        # Check whether to respond based on vote type
+        vote_type = vote.vote_type
+        response_chance = 0.1 if vote_type == 1 else 0.3
+        
+        import random
+        # if random.random() > response_chance:
+        #     print(f"AI decided not to respond to this vote")
+        #     return None  # AI decides not to respond
+        
+        # Get AI personalities that are likely to respond
+        personalities = AIPersonality.query.filter_by(is_active=True).all()
+        
+        # If no active personalities found, check for any personalities
+        if not personalities:
+            personalities = AIPersonality.query.all()
+            print(f"No active AI personalities found, using any available ({len(personalities)} found)")
+        
+        # If still no personalities, create a default one
+        if not personalities:
+            print("No AI personalities found, creating a default one")
+            default_personality = AIPersonality(
+                name="AI Assistant",
+                description="A helpful AI assistant",
+                expertise="General knowledge,Programming,Problem solving",
+                personality_traits="Helpful,Friendly,Knowledgeable",
+                interaction_style="Conversational",
+                helpfulness_level=9,
+                strictness_level=5,
+                verbosity_level=7,
+                prompt_template="You are a helpful AI assistant providing information on {{content}}",
+                is_active=True
+            )
+            db.session.add(default_personality)
+            db.session.commit()
+            personalities = [default_personality]
+        
+        # Select a personality to respond
+        personality = random.choice(personalities)
+        print(f"Selected AI personality for vote response: {personality.name}")
+        print(f"Personality template: {personality.prompt_template}")
+        
+        # Check if the AI user exists, create if not
+        ai_user = User.query.filter_by(username=personality.name).first()
+        if not ai_user:
+            print(f"Creating AI user for {personality.name}")
+            from werkzeug.security import generate_password_hash
+            ai_user = User(
+                username=personality.name,
+                email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                is_ai=True,
+                ai_personality_id=personality.id
+            )
+            db.session.add(ai_user)
+            db.session.commit()
+        
+        # Prepare the content for the template
+        content_text = ""
+        context_text = ""
+        
+        if content_type == "question":
+            question = content
+            
+            if vote_type == 1:
+                content_text = f"The following question received an upvote:\n\n{question.title}\n\n{question.body}\n\nAs {personality.name}, provide an insightful answer to this question."
+            else:
+                content_text = f"The following question received a downvote:\n\n{question.title}\n\n{question.body}\n\nAs {personality.name}, help improve this question by answering what might be unclear or providing a better approach."
+            
+            target_id = question_id
+        elif content_type == "comment":
+            comment = content
+            question = Question.query.get(comment.question_id)
+            
+            # Add question as context
+            context_text = f"Question: {question.title}\n{question.body}"
+            
+            # Get the prompt based on vote type
+            if vote_type == 1:
+                content_text = f"The following comment received an upvote:\n{comment.body}\n\nAs {personality.name}, add to this well-received comment with additional insights or support."
+            else:
+                content_text = f"The following comment received a downvote:\n{comment.body}\n\nAs {personality.name}, provide a balanced perspective or clarify potential misconceptions in this comment."
+            
+            target_id = comment_id
+        
+        # Format the prompt using the personality's template
+        formatted_prompt = personality.prompt_template
+        formatted_prompt = formatted_prompt.replace('{{content}}', content_text)
+        formatted_prompt = formatted_prompt.replace('{{context}}', context_text)
+        
+        # For any other template variables, use personality attributes
+        formatted_prompt = formatted_prompt.replace('{{name}}', personality.name)
+        formatted_prompt = formatted_prompt.replace('{{description}}', personality.description)
+        formatted_prompt = formatted_prompt.replace('{{expertise}}', personality.expertise)
+        formatted_prompt = formatted_prompt.replace('{{personality_traits}}', personality.personality_traits)
+        
+        # Log the actual prompt sent to the model
+        print("FINAL PROMPT FOR AI VOTE RESPONSE:")
+        print("=" * 40)
+        print(formatted_prompt)
+        print("=" * 40)
+        
+        # Get completion from LLM service
+        from app.services.llm_service import get_completion
+        response = get_completion(formatted_prompt)
+        
+        if not response:
+            print("Failed to get a response from the LLM service")
+            return None
+        
+        # Create the answer or comment
+        result = None
+        print(f"Creating AI response from {ai_user.username} (id: {ai_user.id})")
+        
+        if content_type == "question":
+            # Create a comment as an answer to the question
+            result = Comment(
+                body=response,
+                user_id=ai_user.id,
+                question_id=question_id,
+                parent_comment_id=None
+            )
+            db.session.add(result)
+            print(f"Added AI answer to question {question_id}")
+        elif content_type == "comment":
+            # Create a reply to the comment
+            reply = Comment(
+                body=response,
+                user_id=ai_user.id,
+                question_id=question.id,
+                parent_comment_id=comment_id
+            )
+            db.session.add(reply)
+            result = reply
+            print(f"Added AI reply to comment {comment_id}")
+        
+        db.session.commit()
+        return result
+
+
+def ai_respond_to_comment(comment_id):
+    """
+    Generate an AI response to a comment.
     
-    # No vote
-    return 0
+    :param comment_id: The ID of the comment to respond to
+    :return: The generated response, if any
+    """
+    from app.models.user import User
+    from app.models.ai_personality import AIPersonality
+    
+    # Use a no_autoflush block to prevent autoflush-related database errors
+    with db.session.no_autoflush:
+        # Get the comment
+        comment = Comment.query.get(comment_id)
+        if not comment:
+            print(f"Comment ID {comment_id} not found")
+            return None
+        
+        # Don't respond to AI comments to prevent loops
+        comment_author = User.query.get(comment.user_id)
+        if comment_author.is_ai:
+            print(f"Comment {comment_id} was made by an AI user, skipping response to prevent loops")
+            return None
+        
+        # Determine parent content (question or another comment)
+        parent = None
+        question = None
+        
+        if comment.parent_comment_id:
+            parent = Comment.query.get(comment.parent_comment_id)
+            question = Question.query.get(comment.question_id)
+        else:
+            parent = None  # This is a top-level comment (direct answer to a question)
+            question = Question.query.get(comment.question_id)
+        
+        if not question:
+            print(f"Question not found for comment {comment_id}")
+            return None
+        
+        # Check if AI should respond (25% chance)
+        import random
+        # if random.random() > 0.25:
+        #     print(f"AI decided not to respond to comment {comment_id}")
+        #     return None  # AI decides not to respond
+        
+        # Get AI personalities that are likely to respond
+        personalities = AIPersonality.query.filter_by(is_active=True).all()
+        
+        # If no active personalities found, check for any personalities
+        if not personalities:
+            personalities = AIPersonality.query.all()
+            print(f"No active AI personalities found, using any available ({len(personalities)} found)")
+        
+        # If still no personalities, create a default one
+        if not personalities:
+            print("No AI personalities found, creating a default one")
+            default_personality = AIPersonality(
+                name="AI Assistant",
+                description="A helpful AI assistant",
+                expertise="General knowledge,Programming,Problem solving",
+                personality_traits="Helpful,Friendly,Knowledgeable",
+                interaction_style="Conversational",
+                helpfulness_level=9,
+                strictness_level=5,
+                verbosity_level=7,
+                prompt_template="You are a helpful AI assistant providing information on {{content}}",
+                is_active=True
+            )
+            db.session.add(default_personality)
+            db.session.commit()
+            personalities = [default_personality]
+        
+        # Select a personality to respond
+        personality = random.choice(personalities)
+        print(f"Selected AI personality: {personality.name}")
+        print(f"Personality template: {personality.prompt_template}")
+        
+        # Check if the AI user exists, create if not
+        ai_user = User.query.filter_by(username=personality.name).first()
+        if not ai_user:
+            print(f"Creating AI user for {personality.name}")
+            from werkzeug.security import generate_password_hash
+            ai_user = User(
+                username=personality.name,
+                email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                is_ai=True,
+                ai_personality_id=personality.id
+            )
+            db.session.add(ai_user)
+            db.session.commit()
+        
+        # Prepare content text and context text for the template
+        content_text = ""
+        context_text = f"Question: {question.title}\n\n{question.body}"
+        
+        if comment.parent_comment_id is None:
+            # This is an answer (top-level comment) to a question
+            content_text = f"User's answer: {comment.body}\n\nAs {personality.name}, continue the discussion by providing additional insights, clarifications, or a different perspective on this answer."
+        else:
+            # This is a reply to another comment
+            parent_comment = Comment.query.get(comment.parent_comment_id)
+            content_text = f"Original comment: {parent_comment.body}\n\nUser's reply: {comment.body}\n\nAs {personality.name}, continue the discussion with relevant information, insights, or questions."
+        
+        # Format the prompt using the personality's template
+        formatted_prompt = personality.prompt_template
+        formatted_prompt = formatted_prompt.replace('{{content}}', content_text)
+        formatted_prompt = formatted_prompt.replace('{{context}}', context_text)
+        
+        # For any other template variables, use personality attributes
+        formatted_prompt = formatted_prompt.replace('{{name}}', personality.name)
+        formatted_prompt = formatted_prompt.replace('{{description}}', personality.description)
+        formatted_prompt = formatted_prompt.replace('{{expertise}}', personality.expertise)
+        formatted_prompt = formatted_prompt.replace('{{personality_traits}}', personality.personality_traits)
+        
+        # Log the actual prompt sent to the model
+        print("FINAL PROMPT FOR AI COMMENT RESPONSE:")
+        print("=" * 40)
+        print(formatted_prompt)
+        print("=" * 40)
+        
+        # Get completion from LLM service
+        from app.services.llm_service import get_completion
+        response = get_completion(formatted_prompt)
+        
+        if not response:
+            print("Failed to get a response from the LLM service")
+            return None
+        
+        # Create the comment
+        print(f"Creating AI response from {ai_user.username} (id: {ai_user.id})")
+        result = Comment(
+            body=response,
+            user_id=ai_user.id,
+            question_id=question.id,
+            parent_comment_id=comment_id  # This is a reply to the user's comment
+        )
+        
+        db.session.add(result)
+        db.session.commit()
+        print(f"AI {personality.name} responded to comment {comment_id}")
+        
+        return result

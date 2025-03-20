@@ -61,12 +61,7 @@ def get_question(question_id):
     question.increment_view()
     
     # Get the answers sorted by score
-    answers = question.answers.order_by(Answer.is_accepted.desc(), 
-                                       db.desc(db.func.coalesce(
-                                           db.func.sum(db.case([(Vote.vote_type == 1, 1)], else_=0)) -
-                                           db.func.sum(db.case([(Vote.vote_type == -1, 1)], else_=0)),
-                                           0
-                                       ))).outerjoin(Vote).group_by(Answer.id).all()
+    answers = question.answers.order_by(Comment.score.desc(), Comment.created_at.asc()).all()
     
     result = {
         'id': question.id,
@@ -140,7 +135,7 @@ def get_question(question_id):
         # Add user votes on answers
         for answer_data, answer in zip(result['answers'], answers):
             user_answer_vote = Vote.query.filter_by(
-                user_id=current_user.id, answer_id=answer.id).first()
+                user_id=current_user.id, comment_id=answer.id).first()
             answer_data['user_vote'] = user_answer_vote.vote_type if user_answer_vote else 0
     
     return jsonify(result)
@@ -149,7 +144,7 @@ def get_question(question_id):
 @api_bp.route('/vote', methods=['POST'])
 @login_required
 def vote():
-    """API endpoint to vote on a question, answer, or comment"""
+    """API endpoint to vote on a question or comment"""
     data = request.json
     
     if not data or 'vote_type' not in data or data['vote_type'] not in [1, -1, 0]:
@@ -157,11 +152,10 @@ def vote():
     
     # Determine what is being voted on
     question_id = data.get('question_id')
-    answer_id = data.get('answer_id')
     comment_id = data.get('comment_id')
     
-    if not any([question_id, answer_id, comment_id]):
-        return jsonify({'error': 'Must specify question_id, answer_id, or comment_id'}), 400
+    if not any([question_id, comment_id]):
+        return jsonify({'error': 'Must specify question_id or comment_id'}), 400
     
     vote_type = data['vote_type']
     
@@ -170,89 +164,91 @@ def vote():
         if question_id:
             Vote.query.filter_by(
                 user_id=current_user.id, question_id=question_id).delete()
-        elif answer_id:
-            Vote.query.filter_by(
-                user_id=current_user.id, answer_id=answer_id).delete()
         elif comment_id:
             Vote.query.filter_by(
                 user_id=current_user.id, comment_id=comment_id).delete()
-        
         db.session.commit()
-        return jsonify({'success': True, 'vote_type': 0})
+        return jsonify({'success': True, 'message': 'Vote removed'})
     
-    # Check if user has already voted
+    # Find existing vote
     existing_vote = None
     if question_id:
         existing_vote = Vote.query.filter_by(
             user_id=current_user.id, question_id=question_id).first()
-    elif answer_id:
-        existing_vote = Vote.query.filter_by(
-            user_id=current_user.id, answer_id=answer_id).first()
     elif comment_id:
         existing_vote = Vote.query.filter_by(
             user_id=current_user.id, comment_id=comment_id).first()
     
-    # Update or create the vote
+    # Update existing vote or create new one
     if existing_vote:
-        # Change vote
+        # Don't update if vote is the same
+        if existing_vote.vote_type == vote_type:
+            return jsonify({'success': True, 'message': 'Vote already exists'})
+        
+        # Update the vote
         existing_vote.vote_type = vote_type
     else:
-        # New vote
+        # Create new vote
         new_vote = Vote(
             user_id=current_user.id,
-            question_id=question_id,
-            answer_id=answer_id,
-            comment_id=comment_id,
             vote_type=vote_type
         )
+        
+        if question_id:
+            new_vote.question_id = question_id
+        elif comment_id:
+            new_vote.comment_id = comment_id
+            
         db.session.add(new_vote)
     
-    try:
-        db.session.commit()
+    # Update reputation for voted content
+    if question_id:
+        question = Question.query.get_or_404(question_id)
+        owner = question.author
+        rep_change = 5 if vote_type == 1 else -2
+        owner.reputation += rep_change
+    elif comment_id:
+        comment = Comment.query.get_or_404(comment_id)
+        owner = comment.author
+        # Top-level comments (answers) get more reputation
+        if comment.parent_comment_id is None:
+            rep_change = 10 if vote_type == 1 else -2
+        else:
+            rep_change = 2 if vote_type == 1 else -1
+        owner.reputation += rep_change
+    
+    db.session.commit()
+    
+    # Trigger AI response if this is a real user (not an AI)
+    if not current_user.is_ai:
+        # Queue AI response to the vote in the background
+        from app.routes.questions import ai_respond_to_vote
         
-        # Update reputation for the content author
+        # Create a new vote object to pass to the AI responder with proper relationships
+        vote_to_process = Vote(
+            user_id=current_user.id,
+            vote_type=vote_type
+        )
+        
+        # Explicitly set the question or comment objects, not just the IDs
         if question_id:
-            question = Question.query.get(question_id)
-            if question and question.user_id != current_user.id:
-                author = User.query.get(question.user_id)
-                if author:
-                    author.reputation += vote_type
-                    db.session.commit()
-        elif answer_id:
-            answer = Answer.query.get(answer_id)
-            if answer and answer.user_id != current_user.id:
-                author = User.query.get(answer.user_id)
-                if author:
-                    author.reputation += vote_type
-                    db.session.commit()
-        
-        # Trigger AI responses to the vote
-        if question_id:
-            vote_obj = Vote.query.filter_by(user_id=current_user.id, question_id=question_id).first()
-            if vote_obj:
-                from app.routes.questions import ai_respond_to_vote
-                queue_task(ai_respond_to_vote, vote_obj, parallel=True)
-        elif answer_id:
-            vote_obj = Vote.query.filter_by(user_id=current_user.id, answer_id=answer_id).first()
-            if vote_obj:
-                from app.routes.answers import ai_respond_to_vote
-                queue_task(ai_respond_to_vote, vote_obj, parallel=True)
-        
-        return jsonify({
-            'success': True, 
-            'vote_type': vote_type,
-            'message': 'Vote processed successfully'
-        })
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error processing vote: {str(e)}")
-        return jsonify({'error': 'Failed to process vote'}), 500
+            question = Question.query.get_or_404(question_id)
+            vote_to_process.question_id = question_id
+            vote_to_process.question = question  # Set the actual question object
+        elif comment_id:
+            comment = Comment.query.get_or_404(comment_id)
+            vote_to_process.comment_id = comment_id
+            vote_to_process.comment = comment  # Set the actual comment object
+            
+        ai_respond_to_vote(vote_to_process)
+    
+    return jsonify({'success': True})
 
 
-@api_bp.route('/comments/add', methods=['POST'])
+@api_bp.route('/comments', methods=['POST'])
 @login_required
 def add_comment():
-    """API endpoint to add a comment to a question or answer"""
+    """API endpoint to add a comment to a question or another comment"""
     data = request.json
     
     if not data or 'body' not in data or not data['body']:
@@ -260,29 +256,30 @@ def add_comment():
     
     # Determine what is being commented on
     question_id = data.get('question_id')
-    answer_id = data.get('answer_id')
+    parent_comment_id = data.get('parent_comment_id')
     
-    if not any([question_id, answer_id]):
-        return jsonify({'error': 'Must specify question_id or answer_id'}), 400
+    if not any([question_id, parent_comment_id]):
+        return jsonify({'error': 'Must specify question_id or parent_comment_id'}), 400
+    
+    # If this is a reply to another comment, get the parent's question_id
+    if parent_comment_id:
+        parent = Comment.query.get_or_404(parent_comment_id)
+        question_id = parent.question_id
     
     # Create the comment
     comment = Comment(
         body=data['body'],
         user_id=current_user.id,
         question_id=question_id,
-        answer_id=answer_id
+        parent_comment_id=parent_comment_id
     )
     
     db.session.add(comment)
     db.session.commit()
     
     # Trigger AI responses to the comment
-    if question_id:
-        from app.routes.questions import ai_respond_to_comment
-        ai_respond_to_comment(comment.id, question_id=question_id)
-    elif answer_id:
-        from app.routes.answers import ai_respond_to_comment
-        ai_respond_to_comment(comment.id, answer_id=answer_id)
+    from app.routes.comments import ai_respond_to_comment
+    queue_task(ai_respond_to_comment, comment.id, parallel=True)
     
     result = {
         'id': comment.id,
@@ -300,22 +297,28 @@ def add_comment():
     return jsonify(result)
 
 
-@api_bp.route('/answers/accept/<int:answer_id>', methods=['POST'])
+@api_bp.route('/comments/accept/<int:comment_id>', methods=['POST'])
 @login_required
-def accept_answer(answer_id):
-    """API endpoint to accept an answer"""
-    answer = Answer.query.get_or_404(answer_id)
-    question = Question.query.get_or_404(answer.question_id)
+def accept_comment(comment_id):
+    """API endpoint to accept a comment as an answer"""
+    comment = Comment.query.get_or_404(comment_id)
+    question = Question.query.get_or_404(comment.question_id)
     
     # Check if user is the question author
     if question.user_id != current_user.id:
         return jsonify({'error': 'Only the question author can accept answers'}), 403
     
-    answer.accept()
+    # Make sure this is a top-level comment (an answer)
+    if comment.parent_comment_id is not None:
+        return jsonify({'error': 'Only top-level comments can be accepted as answers'}), 400
     
-    # Award reputation points to answer author
-    answer_author = User.query.get(answer.user_id)
-    answer_author.update_reputation(15)  # Reputation for accepted answer
+    # Accept the comment as an answer
+    comment.is_accepted = True
+    db.session.commit()
+    
+    # Award reputation points to comment author
+    comment_author = User.query.get(comment.user_id)
+    comment_author.update_reputation(15)  # Reputation for accepted answer
     
     return jsonify({'success': True})
 
@@ -335,15 +338,13 @@ def ai_respond():
     if not content_type or not content_id:
         return jsonify({'error': 'Must specify content_type and content_id'}), 400
     
-    if content_type not in ['question', 'answer', 'comment']:
+    if content_type not in ['question', 'comment']:
         return jsonify({'error': 'Invalid content_type'}), 400
     
     # Get the content item
     content_item = None
     if content_type == 'question':
         content_item = Question.query.get(content_id)
-    elif content_type == 'answer':
-        content_item = Answer.query.get(content_id)
     else:  # comment
         content_item = Comment.query.get(content_id)
     
@@ -351,9 +352,9 @@ def ai_respond():
         return jsonify({'error': 'Content not found'}), 404
     
     # Get the AI personality
-    ai_personality_id = data.get('ai_personality_id')
+    ai_personality_id = data.get('personality_id')
     if not ai_personality_id:
-        return jsonify({'error': 'Must specify ai_personality_id'}), 400
+        return jsonify({'error': 'Must specify personality_id'}), 400
     
     ai_personality = AIPersonality.query.get(ai_personality_id)
     if not ai_personality:
@@ -371,7 +372,8 @@ def ai_respond():
     # Return immediately with a success message
     return jsonify({
         'success': True,
-        'message': 'AI response generation queued'
+        'message': 'AI response generation queued',
+        'response': {'id': 'pending'}  # Temporary placeholder for the response
     })
 
 def generate_ai_response(content_type, content_id, ai_personality_id):
@@ -381,8 +383,6 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
         content_item = None
         if content_type == 'question':
             content_item = Question.query.get(content_id)
-        elif content_type == 'answer':
-            content_item = Answer.query.get(content_id)
         else:  # comment
             content_item = Comment.query.get(content_id)
             
@@ -417,19 +417,22 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
             tags = ', '.join([tag.tag.name for tag in question.tags])
             context = f"Title: {question.title}\nTags: {tags}\nQuestion: {question.body}"
             prompt = ai_personality.format_prompt(question.body, context)
-        elif content_type == 'answer':
-            answer = content_item
-            question = Question.query.get(answer.question_id)
-            context = f"Question: {question.title}\nQuestion: {question.body}\nAnswer: {answer.body}"
-            prompt = ai_personality.format_prompt(answer.body, context)
         else:  # comment
             if content_item.question_id:
+                # This is a comment on a question (either an answer or a reply to a question)
                 question = Question.query.get(content_item.question_id)
-                context = f"Question: {question.title}\nComment: {content_item.body}"
+                
+                if content_item.parent_comment_id:
+                    # This is a reply to another comment
+                    parent_comment = Comment.query.get(content_item.parent_comment_id)
+                    context = f"Question: {question.title}\nParent Comment: {parent_comment.body}\nReply: {content_item.body}"
+                else:
+                    # This is an answer (top-level comment on a question)
+                    context = f"Question: {question.title}\nAnswer: {content_item.body}"
             else:
-                answer = Answer.query.get(content_item.answer_id)
-                question = Question.query.get(answer.question_id)
-                context = f"Question: {question.title}\nAnswer: {answer.body}\nComment: {content_item.body}"
+                # This should not happen in the new model, but handle it just in case
+                context = f"Comment: {content_item.body}"
+                
             prompt = ai_personality.format_prompt(content_item.body, context)
         
         # Generate AI response
@@ -438,20 +441,11 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
         # Create the appropriate response based on content type
         result = None
         if content_type == 'question':
-            # Create an answer
-            answer = Answer(
-                body=response,
-                user_id=ai_user.id,
-                question_id=content_item.id
-            )
-            db.session.add(answer)
-            result = answer
-        elif content_type == 'answer':
-            # Create a comment on the answer
+            # Create a comment as an answer (top-level comment)
             comment = Comment(
                 body=response,
                 user_id=ai_user.id,
-                answer_id=content_item.id
+                question_id=content_item.id
             )
             db.session.add(comment)
             result = comment
@@ -459,14 +453,10 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
             # Create a reply comment
             reply = Comment(
                 body=response,
-                user_id=ai_user.id
+                user_id=ai_user.id,
+                question_id=content_item.question_id,
+                parent_comment_id=content_item.id
             )
-            
-            if content_item.question_id:
-                reply.question_id = content_item.question_id
-            else:
-                reply.answer_id = content_item.answer_id
-                
             db.session.add(reply)
             result = reply
         
@@ -481,8 +471,6 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
             
             if content_type == 'question':
                 existing_vote = Vote.query.filter_by(user_id=ai_user.id, question_id=content_item.id).first()
-            elif content_type == 'answer':
-                existing_vote = Vote.query.filter_by(user_id=ai_user.id, answer_id=content_item.id).first()
             else:  # comment
                 existing_vote = Vote.query.filter_by(user_id=ai_user.id, comment_id=content_item.id).first()
             
@@ -495,8 +483,6 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
                 
                 if content_type == 'question':
                     vote.question_id = content_item.id
-                elif content_type == 'answer':
-                    vote.answer_id = content_item.id
                 else:  # comment
                     vote.comment_id = content_item.id
                     
@@ -511,6 +497,125 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
     except Exception as e:
         current_app.logger.error(f"Error generating AI response: {str(e)}")
         db.session.rollback()
+
+
+@api_bp.route('/comments/children/<int:parent_id>')
+def get_comment_children(parent_id):
+    """
+    API endpoint to get child comments for a parent comment
+    Used for loading more comments in a thread
+    """
+    skip = request.args.get('skip', 0, type=int)
+    limit = request.args.get('limit', 5, type=int)  # Default to 5 comments per load
+    
+    # Get the parent comment
+    parent_comment = Comment.query.get_or_404(parent_id)
+    
+    # Get child comments with pagination
+    child_comments = Comment.query.filter_by(
+        parent_comment_id=parent_id
+    ).order_by(Comment.score.desc(), Comment.created_at.asc()).offset(skip).limit(limit).all()
+    
+    # Count remaining comments
+    total_children = Comment.query.filter_by(parent_comment_id=parent_id).count()
+    remaining = total_children - (skip + len(child_comments))
+    
+    # Format the comments
+    comments_data = []
+    for comment in child_comments:
+        # Format each comment including replies
+        comment_data = format_comment_data(comment)
+        comments_data.append(comment_data)
+    
+    return jsonify({
+        'success': True,
+        'comments': comments_data,
+        'total_remaining': remaining
+    })
+
+
+@api_bp.route('/comments/thread/<int:parent_id>')
+def get_comment_thread(parent_id):
+    """
+    API endpoint to get a full thread of comments starting from a parent
+    Used for the "continue this thread" feature
+    """
+    # Get the parent comment
+    parent_comment = Comment.query.get_or_404(parent_id)
+    
+    # Get all child comments (up to a reasonable limit)
+    child_comments = Comment.query.filter_by(
+        parent_comment_id=parent_id
+    ).order_by(Comment.score.desc(), Comment.created_at.asc()).limit(50).all()
+    
+    # Format the comments
+    comments_data = []
+    for comment in child_comments:
+        # Format each comment including replies
+        comment_data = format_comment_data(comment)
+        comments_data.append(comment_data)
+    
+    return jsonify({
+        'success': True,
+        'comments': comments_data
+    })
+
+
+def format_comment_data(comment, include_replies=True, max_depth=2, current_depth=0):
+    """
+    Helper function to format a comment and its replies into a JSON-serializable format
+    """
+    # Get the user vote if authenticated
+    user_vote = 0
+    if current_user.is_authenticated:
+        vote = Vote.query.filter_by(user_id=current_user.id, comment_id=comment.id).first()
+        if vote:
+            user_vote = vote.vote_type
+    
+    # Format the base comment data
+    comment_data = {
+        'id': comment.id,
+        'body': comment.body,
+        'html_content': comment.html_content,
+        'author_id': comment.author_id,
+        'author_username': comment.author.username if comment.author else '[deleted]',
+        'author_is_ai': comment.author.is_ai if comment.author else False,
+        'score': comment.score,
+        'created_at': comment.created_at.isoformat(),
+        'is_deleted': comment.is_deleted,
+        'user_vote': user_vote,
+        'replies': []
+    }
+    
+    # Include replies recursively, but limit depth to avoid too much data
+    if include_replies and current_depth < max_depth:
+        replies = Comment.query.filter_by(parent_comment_id=comment.id).all()
+        for reply in replies:
+            reply_data = format_comment_data(
+                reply, 
+                include_replies=True,
+                max_depth=max_depth,
+                current_depth=current_depth + 1
+            )
+            comment_data['replies'].append(reply_data)
+    
+    return comment_data
+
+
+@api_bp.route('/comments/<int:comment_id>/delete', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    """API endpoint to soft delete a comment"""
+    comment = Comment.query.get_or_404(comment_id)
+    
+    # Check if user is authorized to delete the comment
+    if comment.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Soft delete the comment
+    comment.soft_delete()
+    
+    return jsonify({'success': True, 'message': 'Comment deleted successfully'})
 
 
 @api_bp.route('/tags/search')

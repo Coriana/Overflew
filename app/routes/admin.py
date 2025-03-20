@@ -260,11 +260,18 @@ def delete_user(user_id):
         return redirect(url_for('admin.users'))
     
     try:
-        # Using bulk delete to remove user's questions, comments, answers, and votes
-        db.session.query(Comment).filter_by(author_id=user_id).delete()
-        db.session.query(Answer).filter_by(author_id=user_id).delete()
+        # Soft delete user's content instead of hard deleting it
+        for comment in user.comments:
+            comment.soft_delete()
+            
+        for answer in user.answers:
+            answer.soft_delete()
+            
+        for question in user.questions:
+            question.soft_delete()
+            
+        # Still delete votes as they don't need to maintain the structure
         db.session.query(Vote).filter_by(user_id=user_id).delete()
-        db.session.query(Question).filter_by(author_id=user_id).delete()
         
         # Delete the user
         db.session.delete(user)
@@ -330,9 +337,8 @@ def questions():
 def delete_question(question_id):
     question = Question.query.get_or_404(question_id)
     
-    # Delete the question
-    db.session.delete(question)
-    db.session.commit()
+    # Soft delete the question
+    question.soft_delete()
     
     flash('Question deleted successfully', 'success')
     return redirect(url_for('admin.questions'))
@@ -697,8 +703,8 @@ Remember to stay in character as LegacyPro throughout your response."""
         
         # Create a user for this AI personality
         ai_user = User(
-            username=f"AI_{personality['name'].replace(' ', '_')}",
-            email=f"ai_{personality['name'].lower().replace(' ', '_')}@overflew.ai",
+            username=f"{personality['name'].replace(' ', '_')}",
+            email=f"{personality['name'].lower().replace(' ', '_')}@overflew.ai",
             is_ai=True,
             ai_personality_id=ai_personality.id
         )
