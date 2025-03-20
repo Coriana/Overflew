@@ -77,9 +77,9 @@
         </div>
         
         <!-- Results -->
-        {% if results %}
+        {% if questions %}
             {% if tab == 'questions' or tab == 'all' %}
-                {% for question in results.questions %}
+                {% for question in questions.items %}
                     <div class="question-summary d-flex">
                         <div class="question-stats">
                             <div>
@@ -87,7 +87,7 @@
                                 <span class="d-block small">votes</span>
                             </div>
                             <div>
-                                <span class="fw-bold {{ 'text-success' if question.answers|length > 0 else '' }}">{{ question.answers|length }}</span>
+                                <span class="fw-bold {{ 'text-success' if question.answers.count() > 0 else '' }}">{{ question.answers.count() }}</span>
                                 <span class="d-block small">answers</span>
                             </div>
                             <div>
@@ -100,11 +100,11 @@
                                 <a href="{{ url_for('questions.view', question_id=question.id) }}">{{ question.title }}</a>
                             </h3>
                             <div class="question-excerpt">
-                                {{ question.body_html|safe|truncate(200)|highlight(query) }}
+                                {{ question.body|truncate(200) }}
                             </div>
                             <div class="tag-list">
-                                {% for tag in question.tags %}
-                                    <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                                {% for question_tag in question.tags %}
+                                    <a href="{{ url_for('main.tag', tag_name=question_tag.tag.name) }}" class="tag">{{ question_tag.tag.name }}</a>
                                 {% endfor %}
                             </div>
                             <div class="question-meta d-flex justify-content-between align-items-center">
@@ -132,7 +132,7 @@
             {% endif %}
             
             {% if tab == 'answers' or tab == 'all' %}
-                {% for answer in results.answers %}
+                {% for answer in answers %}
                     <div class="answer-summary d-flex">
                         <div class="answer-stats">
                             <div>
@@ -150,7 +150,7 @@
                                 <a href="{{ url_for('questions.view', question_id=answer.question.id) }}#answer-{{ answer.id }}">{{ answer.question.title }}</a>
                             </h3>
                             <div class="answer-excerpt">
-                                {{ answer.body_html|safe|truncate(200)|highlight(query) }}
+                                {{ answer.body|truncate(200) }}
                             </div>
                             <div class="answer-meta d-flex justify-content-between align-items-center">
                                 <div>
@@ -179,7 +179,7 @@
             
             {% if tab == 'users' or tab == 'all' %}
                 <div class="row row-cols-1 row-cols-md-3 g-4 mb-4">
-                    {% for user in results.users %}
+                    {% for user in users %}
                         <div class="col">
                             <div class="card h-100">
                                 <div class="card-body">
@@ -187,7 +187,7 @@
                                         <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="rounded-circle me-3" style="width: 64px; height: 64px;">
                                         <div>
                                             <h5 class="card-title mb-0">
-                                                <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username|highlight(query) }}</a>
+                                                <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username }}</a>
                                                 {% if user.is_ai %}
                                                     <span class="ai-badge">AI</span>
                                                 {% endif %}
@@ -199,16 +199,16 @@
                                     </div>
                                     
                                     {% if user.bio %}
-                                        <p class="card-text">{{ user.bio|truncate(100)|highlight(query) }}</p>
+                                        <p class="card-text">{{ user.bio|truncate(100) }}</p>
                                     {% endif %}
                                     
                                     <div class="user-stats d-flex justify-content-around mt-3">
                                         <div class="text-center">
-                                            <div class="fw-bold">{{ user.questions|length }}</div>
+                                            <div class="fw-bold">{{ user.questions.count() }}</div>
                                             <div class="small">questions</div>
                                         </div>
                                         <div class="text-center">
-                                            <div class="fw-bold">{{ user.answers|length }}</div>
+                                            <div class="fw-bold">{{ user.answers.count() }}</div>
                                             <div class="small">answers</div>
                                         </div>
                                         <div class="text-center">
@@ -228,16 +228,16 @@
             
             {% if tab == 'tags' or tab == 'all' %}
                 <div class="row row-cols-1 row-cols-md-3 g-4 mb-4">
-                    {% for tag in results.tags %}
+                    {% for tag in tags %}
                         <div class="col">
                             <div class="card h-100">
                                 <div class="card-body">
                                     <h5 class="card-title mb-2">
-                                        <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name|highlight(query) }}</a>
+                                        <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
                                     </h5>
                                     <p class="card-text">
                                         {% if tag.description %}
-                                            {{ tag.description|truncate(100)|highlight(query) }}
+                                            {{ tag.description|truncate(100) }}
                                         {% else %}
                                             <span class="text-muted">No description available.</span>
                                         {% endif %}
@@ -256,49 +256,32 @@
             {% endif %}
             
             <!-- Pagination -->
-            {% if pagination and pagination.pages > 1 %}
+            {% if questions.pages > 1 %}
                 <nav aria-label="Page navigation" class="mt-4">
                     <ul class="pagination justify-content-center">
-                        {% if pagination.has_prev %}
-                            <li class="page-item">
-                                <a class="page-link" href="{{ url_for('main.search', q=query, tab=tab, sort=sort, page=pagination.prev_num) }}">Previous</a>
-                            </li>
-                        {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">Previous</span>
-                            </li>
-                        {% endif %}
+                        <li class="page-item {{ 'disabled' if questions.page == 1 }}">
+                            <a class="page-link" href="{{ url_for('main.search', q=query, tab=tab, sort=sort, page=questions.page-1) if questions.page > 1 else '#' }}">Previous</a>
+                        </li>
                         
-                        {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
-                            {% if page %}
-                                {% if page == pagination.page %}
-                                    <li class="page-item active">
-                                        <span class="page-link">{{ page }}</span>
-                                    </li>
-                                {% else %}
-                                    <li class="page-item">
-                                        <a class="page-link" href="{{ url_for('main.search', q=query, tab=tab, sort=sort, page=page) }}">{{ page }}</a>
-                                    </li>
-                                {% endif %}
+                        {% for page_num in questions.iter_pages(left_edge=2, left_current=2, right_current=2, right_edge=2) %}
+                            {% if page_num %}
+                                <li class="page-item {{ 'active' if page_num == questions.page }}">
+                                    <a class="page-link" href="{{ url_for('main.search', q=query, tab=tab, sort=sort, page=page_num) }}">{{ page_num }}</a>
+                                </li>
                             {% else %}
                                 <li class="page-item disabled">
-                                    <span class="page-link">...</span>
+                                    <span class="page-link">…</span>
                                 </li>
                             {% endif %}
                         {% endfor %}
                         
-                        {% if pagination.has_next %}
-                            <li class="page-item">
-                                <a class="page-link" href="{{ url_for('main.search', q=query, tab=tab, sort=sort, page=pagination.next_num) }}">Next</a>
-                            </li>
-                        {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">Next</span>
-                            </li>
-                        {% endif %}
+                        <li class="page-item {{ 'disabled' if questions.page == questions.pages }}">
+                            <a class="page-link" href="{{ url_for('main.search', q=query, tab=tab, sort=sort, page=questions.page+1) if questions.page < questions.pages else '#' }}">Next</a>
+                        </li>
                     </ul>
                 </nav>
             {% endif %}
+            
         {% else %}
             <div class="alert alert-info">
                 <h4 class="alert-heading">No results found!</h4>

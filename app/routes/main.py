@@ -1,10 +1,13 @@
 from flask import Blueprint, render_template, redirect, url_for, request, current_app, flash
 from flask_login import current_user, login_required
-from app.models.question import Question
-from app.models.answer import Answer
-from app.models.comment import Comment
-from app.models.tag import Tag, QuestionTag
+from sqlalchemy import or_, desc, case
+from sqlalchemy.types import TypeDecorator, Integer
+
 from app.models.user import User
+from app.models.question import Question
+from app.models.comment import Comment
+from app.models.answer import Answer
+from app.models.tag import Tag, QuestionTag
 from app.models.ai_personality import AIPersonality
 from app import db
 
@@ -53,15 +56,20 @@ def index():
 def search():
     query = request.args.get('q', '')
     page = request.args.get('page', 1, type=int)
+    tab = request.args.get('tab', 'all')
+    sort = request.args.get('sort', 'relevance')
     
     if not query:
         return redirect(url_for('main.index'))
     
-    # Search for questions that match the query in title or body
-    questions = Question.query.filter(
-        Question.title.ilike(f'%{query}%') | 
-        Question.body.ilike(f'%{query}%')
-    ).order_by(Question.created_at.desc())
+    # Search for questions that match the query in title or content
+    # We're now explicitly searching in html_content as well as body
+    question_query = Question.query.filter(
+        or_(
+            Question.title.ilike(f'%{query}%'),
+            Question.body.ilike(f'%{query}%')
+        )
+    )
     
     # Also search by tags
     tag_questions = Question.query.join(
@@ -72,22 +80,120 @@ def search():
         Tag.name.ilike(f'%{query}%')
     )
     
-    # Combine the queries - Use distinct to avoid duplicates instead of union
-    # SQLite has issues with UNION in some complex queries
-    combined_query = Question.query.filter(
-        (Question.title.ilike(f'%{query}%') | 
-         Question.body.ilike(f'%{query}%') |
-         Question.id.in_([q.id for q in tag_questions]))
-    ).order_by(Question.created_at.desc())
+    # Search for answers containing the query
+    answer_query = Answer.query.filter(
+        Answer.body.ilike(f'%{query}%')
+    )
+    
+    # Get questions from the matching answers
+    questions_from_answers = Question.query.filter(
+        Question.id.in_([a.question_id for a in answer_query])
+    )
+    
+    # Combine the queries using union to avoid duplicates
+    # Note: Due to SQLite limitations with complex UNION queries, we'll use a different approach
+    all_question_ids = set()
+    
+    # Add IDs from each query source
+    for q in question_query:
+        all_question_ids.add(q.id)
+    for q in tag_questions:
+        all_question_ids.add(q.id)
+    for q in questions_from_answers:
+        all_question_ids.add(q.id)
+        
+    # Manually check all content if we have no results
+    if not all_question_ids:
+        current_app.logger.warning(f"No results found for '{query}', trying manual search")
+        all_questions = Question.query.all()
+        all_answers = Answer.query.all()
+        
+        # Search in questions (title and body)
+        for q in all_questions:
+            if query.lower() in q.title.lower() or query.lower() in q.body.lower():
+                all_question_ids.add(q.id)
+                current_app.logger.info(f"Found match in question {q.id}: {q.title}")
+        
+        # Search in answers
+        for a in all_answers:
+            if query.lower() in a.body.lower():
+                all_question_ids.add(a.question_id)
+                current_app.logger.info(f"Found match in answer {a.id} for question {a.question_id}")
+    
+    # Get the combined query from the IDs we collected
+    combined_query = Question.query.filter(Question.id.in_(all_question_ids))
+    
+    # Apply sorting
+    if sort == 'newest':
+        combined_query = combined_query.order_by(Question.created_at.desc())
+    elif sort == 'votes':
+        # This is more complex as we need to sort by votes
+        # We'll get all questions and sort them in Python
+        sorted_questions = combined_query.all()
+        sorted_questions.sort(key=lambda q: q.score, reverse=True)
+        sorted_ids = [q.id for q in sorted_questions]
+        
+        # Create a new query using the sorted IDs
+        # Use a case statement to preserve the sorting order
+        if sorted_ids:
+            case_stmt = case(
+                {id_val: idx for idx, id_val in enumerate(sorted_ids)},
+                value=Question.id
+            )
+            combined_query = Question.query.filter(Question.id.in_(sorted_ids)).order_by(case_stmt)
+    elif sort == 'activity':
+        combined_query = combined_query.order_by(Question.updated_at.desc())
+    else:  # relevance - default
+        # Sort by whether the query is found in the title (more relevant)
+        sorted_questions = combined_query.all()
+        sorted_questions.sort(key=lambda q: (
+            query.lower() in q.title.lower(),  # First priority: term in title
+            q.score  # Second priority: score
+        ), reverse=True)
+        sorted_ids = [q.id for q in sorted_questions]
+        
+        # Create a new query with preserved order
+        if sorted_ids:
+            case_stmt = case(
+                {id_val: idx for idx, id_val in enumerate(sorted_ids)},
+                value=Question.id
+            )
+            combined_query = Question.query.filter(Question.id.in_(sorted_ids)).order_by(case_stmt)
+    
+    # Get data for the other tabs
+    users = User.query.filter(User.username.ilike(f'%{query}%')).all()
+    tags = Tag.query.filter(Tag.name.ilike(f'%{query}%')).all()
+    answers = Answer.query.filter(Answer.body.ilike(f'%{query}%')).all()
+    
+    # Get counts for each tab
+    question_count = len(all_question_ids)
+    answer_count = len(answers)
+    user_count = len(users)
+    tag_count = len(tags)
+    total_results = question_count + answer_count + user_count + tag_count
     
     # Paginate the results
     paginated_questions = combined_query.paginate(
         page=page, per_page=10, error_out=False
     )
     
-    current_app.logger.info(f"Search query '{query}' found {paginated_questions.total} results")
+    current_app.logger.info(f"Search query '{query}' found {total_results} total results")
     
-    return render_template('main/search.html', questions=paginated_questions, query=query)
+    return render_template(
+        'main/search.html',
+        questions=paginated_questions,
+        answers=answers,
+        users=users,
+        tags=tags,
+        query=query,
+        total_results=total_results,
+        question_count=question_count,
+        answer_count=answer_count,
+        user_count=user_count,
+        tag_count=tag_count,
+        tab=tab,
+        sort=sort
+    )
 
 
 @main_bp.route('/tags')
