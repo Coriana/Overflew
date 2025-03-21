@@ -708,7 +708,7 @@ Remember to stay in character as LegacyPro throughout your response."""
             is_ai=True,
             ai_personality_id=ai_personality.id
         )
-        ai_user.set_password("AIUSER")  # Use the set_password method instead of direct assignment
+        ai_user.set_password("AIUSER")  # Use the set_password method
         
         db.session.add(ai_user)
         created_count += 1
@@ -847,8 +847,15 @@ def populate_thread(question_id):
 @admin_required
 def settings():
     from app.models.site_settings import SiteSettings
+    from flask_wtf import FlaskForm
     
-    if request.method == 'POST':
+    # Create a simple form for CSRF protection
+    class SettingsForm(FlaskForm):
+        pass
+        
+    form = SettingsForm()
+    
+    if request.method == 'POST' and form.validate_on_submit():
         # Update settings
         SiteSettings.set('ai_auto_populate_enabled', 
                         request.form.get('ai_auto_populate_enabled') == 'on',
@@ -872,4 +879,4 @@ def settings():
         'ai_auto_populate_personalities': SiteSettings.get('ai_auto_populate_personalities', 7)
     }
     
-    return render_template('admin/settings.html', settings=settings)
+    return render_template('admin/settings.html', settings=settings, form=form)
