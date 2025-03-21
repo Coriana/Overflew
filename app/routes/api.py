@@ -368,6 +368,34 @@ def ai_respond():
         'response': {'id': 'pending'}  # Temporary placeholder for the response
     })
 
+def determine_vote_type(ai_personality, content):
+    """
+    Determine if an AI personality should upvote (1), downvote (-1), or not vote (0) 
+    based on their personality traits and the content
+    """
+    # By default, AIs tend to be more positive than negative
+    # Higher helpfulness_level means more likely to upvote
+    # Higher strictness_level means more likely to downvote
+    # Start with a base probability of upvoting
+    upvote_probability = 0.7 + (ai_personality.helpfulness_level / 100)
+    
+    # Reduce probability based on strictness
+    upvote_probability -= (ai_personality.strictness_level / 100)
+    
+    # Ensure probability is between 0.1 and 0.9
+    upvote_probability = max(0.1, min(0.9, upvote_probability))
+    
+    # Random choice based on probability
+    import random
+    if random.random() < upvote_probability:
+        return 1  # Upvote
+    else:
+        return -1  # Downvote
+    
+    # Note: We don't return 0 (no vote) as AIs should always have an opinion
+    # This can be modified if we want AIs to sometimes abstain from voting
+
+
 def generate_ai_response(content_type, content_id, ai_personality_id):
     """Background task to generate an AI response"""
     try:

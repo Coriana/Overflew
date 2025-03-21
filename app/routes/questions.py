@@ -53,7 +53,7 @@ def ask():
         
         db.session.commit()
         
-        # Trigger AI responses asynchronously
+        # Trigger AI responses
         from app.models.ai_personality import AIPersonality
         from app.models.user import User
         
@@ -88,27 +88,30 @@ def ask():
                 db.session.commit()
             
             # Generate AI answer using the selected personality
-            queue_task(
-                _generate_ai_answer, 
-                f"Question: {question.title}\n\n{question.body}", 
-                ai_user.id,  # Use AI user id instead of current_user.id
-                question_id=question.id
+            from app.routes.api import generate_ai_response
+            ai_response = generate_ai_response(
+                'question', 
+                question.id, 
+                personality.id
             )
+            if ai_response:
+                print(f"Added AI answer to question {question.id}")
         else:
             print("No AI personalities found, skipping initial AI answer")
         
         # Check if auto-population is enabled and trigger it if so
         from app.models.site_settings import SiteSettings
         
+        # Use flask.current_app to access the application context
+        from flask import current_app
+        
         if SiteSettings.get('ai_auto_populate_enabled', False):
             print(f"Auto-population is enabled, populating thread for question {question.id}")
-            # Run auto-populate in the background to not block the user
-            import threading
-            thread = threading.Thread(target=auto_populate_thread, args=(question.id,))
-            thread.daemon = True
-            thread.start()
+            # Use the LLM worker thread pool to run auto-population in the background
+            from app.services.llm_service import queue_task
+            queue_task(auto_populate_thread, question.id, parallel=True)
         
-        flash('Your question has been posted', 'success')
+        flash('Your question has been posted.', 'success')
         return redirect(url_for('questions.view', question_id=question.id))
     
     return render_template('questions/ask.html')
@@ -839,149 +842,249 @@ def ai_respond_to_comment(comment_id):
 
 
 def auto_populate_thread(question_id):
-    """
-    Auto-populate a thread with AI-generated comments
-    
-    This function will have multiple AI personalities interact with a question and its
-    comments, voting and replying to create a lively discussion thread.
-    
-    :param question_id: The ID of the question to populate
-    :return: None
-    """
-    from app.models.user import User
-    from app.models.ai_personality import AIPersonality
+    """Auto-populate a thread with AI-generated comments"""
     from app.models.site_settings import SiteSettings
+    from app.models.ai_personality import AIPersonality
+    from app.models.user import User
+    from app.models.question import Question
+    from app.models.answer import Answer
+    from app.models.comment import Comment
     from app.models.vote import Vote
+    from flask import current_app
     import random
     
     # Check if auto-population is enabled
     if not SiteSettings.get('ai_auto_populate_enabled', False):
-        print("AI auto-population is disabled in settings")
+        print("Auto-population is disabled, skipping")
         return
     
-    # Get the question
-    question = Question.query.get(question_id)
-    if not question:
-        print(f"Question {question_id} not found")
-        return
-    
-    # Get settings for auto-population
-    max_comments = SiteSettings.get('ai_auto_populate_max_comments', 150)
-    num_personalities = SiteSettings.get('ai_auto_populate_personalities', 7)
-    
-    # Get active AI personalities
-    all_personalities = AIPersonality.query.filter_by(is_active=True).all()
-    
-    # If we don't have enough personalities, use what we have
-    if len(all_personalities) < num_personalities:
-        personalities = all_personalities
-        print(f"Warning: Requested {num_personalities} personalities but only found {len(all_personalities)}")
-    else:
-        # Randomly select distinct personalities
-        personalities = random.sample(all_personalities, num_personalities)
-    
-    # Make sure AI users exist for each personality
-    ai_users = []
-    for personality in personalities:
-        ai_user = User.query.filter_by(username=personality.name).first()
+    try:
+        # Get the max number of comments to generate
+        max_comments = SiteSettings.get('ai_auto_populate_max_comments', 150)
         
-        if not ai_user:
-            print(f"Creating AI user for {personality.name}")
-            from werkzeug.security import generate_password_hash
-            ai_user = User(
-                username=personality.name,
-                email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
-                password_hash=generate_password_hash("AI_USER_PASSWORD"),
-                is_ai=True,
-                ai_personality_id=personality.id
+        # Get the number of AI personalities to involve
+        num_personalities = SiteSettings.get('ai_auto_populate_personalities', 7)
+        
+        # Get the question
+        question = Question.query.get(question_id)
+        if not question:
+            print(f"Question {question_id} not found, skipping auto-population")
+            return
+        
+        # Get active AI personalities
+        ai_personalities = list(AIPersonality.query.filter_by(is_active=True).all())
+        if len(ai_personalities) < num_personalities:
+            print(f"Not enough active AI personalities ({len(ai_personalities)}), using all available")
+            num_personalities = len(ai_personalities)
+        
+        if not ai_personalities:
+            print("No active AI personalities found, skipping auto-population")
+            return
+        
+        # Randomly select AI personalities to use
+        selected_personalities = random.sample(ai_personalities, num_personalities)
+        print(f"Selected {len(selected_personalities)} AI personalities for auto-population")
+        
+        # Get or create AI users for selected personalities
+        ai_users = []
+        for personality in selected_personalities:
+            ai_user = User.query.filter_by(username=personality.name).first()
+            
+            if not ai_user:
+                print(f"Creating AI user for {personality.name}")
+                from werkzeug.security import generate_password_hash
+                ai_user = User(
+                    username=personality.name,
+                    email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                    password_hash=generate_password_hash("AI_USER_PASSWORD"),
+                    is_ai=True,
+                    ai_personality_id=personality.id
+                )
+                db.session.add(ai_user)
+                db.session.commit()
+            
+            ai_users.append(ai_user)
+        
+        # Function to create initial AI answers
+        def _create_ai_answer(ai_user, question):
+            print(f"Creating AI answer from {ai_user.username} for question {question.id}")
+            
+            # Generate AI response
+            from app.routes.api import generate_ai_response
+            ai_response = generate_ai_response(
+                'question', 
+                question.id, 
+                ai_user.ai_personality_id
             )
-            db.session.add(ai_user)
-            db.session.commit()
+            
+            if ai_response:
+                print(f"Added AI answer from {ai_user.username} to question {question.id}")
+                return True
+            return False
         
-        ai_users.append(ai_user)
-    
-    # Function to get all comments in a thread
-    def get_all_comments(question_id):
-        return Comment.query.filter_by(question_id=question_id, is_deleted=False).all()
-    
-    # First, have AI personalities respond to the question directly
-    for ai_user in ai_users:
-        # Generate an initial answer to the question
-        _create_ai_answer(ai_user, question)
-    
-    # Keep track of the total comments to not exceed the limit
-    total_comments = len(get_all_comments(question_id))
-    
-    # Now, iteratively have AIs respond to each other until we reach the limit
-    iteration = 0
-    max_iterations = 50  # Safety limit to prevent infinite loops
-    
-    while total_comments < max_comments and iteration < max_iterations:
-        iteration += 1
-        print(f"Auto-population iteration {iteration}, current comments: {total_comments}/{max_comments}")
-        
-        # Get all comments in the thread
-        all_comments = get_all_comments(question_id)
-        if not all_comments:
-            break
-        
-        # Each AI will vote on some comments and possibly reply
-        comments_added = 0
-        for ai_user in ai_users:
-            # Skip if we've already reached the limit
-            if total_comments >= max_comments:
-                break
+        # Function to create AI replies to comments
+        def _create_ai_reply(ai_user, parent_comment, context=""):
+            # Don't reply to yourself
+            if parent_comment.user_id == ai_user.id:
+                return False
                 
-            # Pick a random comment that wasn't authored by this AI
-            eligible_comments = [c for c in all_comments if c.user_id != ai_user.id]
-            if not eligible_comments:
+            print(f"Creating AI reply from {ai_user.username} to comment {parent_comment.id}")
+            
+            # Generate content for the context
+            if isinstance(parent_comment, Answer):
+                content_type = "answer"
+                content = parent_comment.body
+            else:
+                content_type = "comment"
+                content = parent_comment.body
+            
+            # Use direct comment creation for more control over the AI reply process
+            try:
+                # Create a new comment
+                reply = Comment(
+                    body=f"AI reply from {ai_user.username} to {content_type} {parent_comment.id}",
+                    user_id=ai_user.id,
+                    question_id=question.id,
+                    parent_comment_id=parent_comment.id
+                )
+                db.session.add(reply)
+                db.session.commit()
+                
+                # Update with AI-generated content
+                from app.models.ai_personality import AIPersonality
+                ai_personality = AIPersonality.query.get(ai_user.ai_personality_id)
+                
+                if ai_personality:
+                    # Generate context
+                    if not context:
+                        context = f"Thread context: {question.title}\n\n{question.body}\n\nComment: {content}"
+                    
+                    # Generate response using personality template
+                    prompt = ai_personality.format_prompt(content, context)
+                    from app.services.llm_service import get_completion
+                    response = get_completion(prompt, max_tokens=1024)
+                    
+                    # Update the reply with the AI-generated content
+                    reply.body = response
+                    db.session.commit()
+                
+                print(f"Added AI reply from {ai_user.username} to {content_type} {parent_comment.id}")
+                return True
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error creating AI reply: {str(e)}")
+                return False
+        
+        # Create initial answers from some AI personalities
+        initial_answer_count = min(num_personalities // 2, 3)  # At most 3 initial answers
+        for i in range(initial_answer_count):
+            _create_ai_answer(ai_users[i], question)
+        
+        # Get all comments and answers in the thread
+        comments_count = 0
+        while comments_count < max_comments:
+            # Get all answers and comments in the thread
+            answers = Answer.query.filter_by(question_id=question.id, is_deleted=False).all()
+            comments = Comment.query.filter_by(question_id=question.id, is_deleted=False).all()
+            
+            # If no answers or comments yet, wait for them
+            if not answers and not comments:
+                import time
+                time.sleep(5)
                 continue
                 
-            comment_to_interact = random.choice(eligible_comments)
-            
-            # Decide whether to upvote or downvote (90% upvote, 10% downvote)
-            vote_type = 1 if random.random() < 0.9 else -1
-            
-            # Check if this AI has already voted on this comment
-            existing_vote = Vote.query.filter_by(
-                user_id=ai_user.id,
-                comment_id=comment_to_interact.id
-            ).first()
-            
-            # Vote on the comment
-            with db.session.no_autoflush:
-                if existing_vote:
-                    # Update existing vote
-                    existing_vote.vote_type = vote_type
-                else:
-                    # Create new vote
-                    new_vote = Vote(
-                        user_id=ai_user.id,
-                        comment_id=comment_to_interact.id,
-                        vote_type=vote_type
-                    )
-                    db.session.add(new_vote)
+            # Calculate total count
+            comments_count = len(answers) + len(comments)
+            if comments_count >= max_comments:
+                break
                 
-                try:
-                    db.session.commit()
-                except Exception as e:
-                    db.session.rollback()
-                    print(f"Error creating vote: {str(e)}")
-                    continue
+            # Combine answers and comments for AI to interact with
+            all_comments = answers + comments
             
-            # Decide whether to reply (75% chance)
-            if random.random() < 0.75:
-                new_comment = _create_ai_reply(ai_user, comment_to_interact)
-                if new_comment:
-                    comments_added += 1
-                    total_comments += 1
+            # Each AI has a chance to interact
+            for ai_user in ai_users:
+                # Skip if we've reached the limit
+                if comments_count >= max_comments:
+                    break
+                    
+                # 90% chance to upvote a random comment and possibly reply
+                if random.random() < 0.9:
+                    # Try to find a comment not by this AI to upvote
+                    for _ in range(min(10, len(all_comments))):
+                        target = random.choice(all_comments)
+                        # Don't vote on your own comments
+                        if target.user_id != ai_user.id:
+                            # Create upvote
+                            vote = Vote.query.filter_by(
+                                user_id=ai_user.id,
+                                question_id=None if isinstance(target, Comment) else target.id,
+                                comment_id=target.id if isinstance(target, Comment) else None
+                            ).first()
+                            
+                            if not vote:
+                                vote = Vote(
+                                    user_id=ai_user.id,
+                                    question_id=None if isinstance(target, Comment) else target.id,
+                                    comment_id=target.id if isinstance(target, Comment) else None,
+                                    vote_type=1  # upvote
+                                )
+                                db.session.add(vote)
+                                try:
+                                    db.session.commit()
+                                    print(f"Added upvote from {ai_user.username} to {'answer' if isinstance(target, Answer) else 'comment'} {target.id}")
+                                    
+                                    # 70% chance to reply to upvoted comment
+                                    if random.random() < 0.7:
+                                        _create_ai_reply(ai_user, target)
+                                        comments_count += 1
+                                    
+                                    break  # Found a comment to upvote
+                                except Exception as e:
+                                    db.session.rollback()
+                                    print(f"Error adding upvote: {str(e)}")
+                # 10% chance to downvote a random comment
+                else:
+                    # Try to find a comment not by this AI to downvote
+                    for _ in range(min(10, len(all_comments))):
+                        target = random.choice(all_comments)
+                        # Don't vote on your own comments
+                        if target.user_id != ai_user.id:
+                            # Create downvote
+                            vote = Vote.query.filter_by(
+                                user_id=ai_user.id,
+                                question_id=None if isinstance(target, Comment) else target.id,
+                                comment_id=target.id if isinstance(target, Comment) else None
+                            ).first()
+                            
+                            if not vote:
+                                vote = Vote(
+                                    user_id=ai_user.id,
+                                    question_id=None if isinstance(target, Comment) else target.id,
+                                    comment_id=target.id if isinstance(target, Comment) else None,
+                                    vote_type=-1  # downvote
+                                )
+                                db.session.add(vote)
+                                try:
+                                    db.session.commit()
+                                    print(f"Added downvote from {ai_user.username} to {'answer' if isinstance(target, Answer) else 'comment'} {target.id}")
+                                    
+                                    # 90% chance to reply to downvoted comment
+                                    if random.random() < 0.9:
+                                        _create_ai_reply(ai_user, target)
+                                        comments_count += 1
+                                    
+                                    break  # Found a comment to downvote
+                                except Exception as e:
+                                    db.session.rollback()
+                                    print(f"Error adding downvote: {str(e)}")
+            
+            # Pause between iterations to avoid overloading the server
+            import time
+            time.sleep(2)
         
-        # If no new comments were added in this iteration, break to avoid an infinite loop
-        if comments_added == 0:
-            print("No new comments added in this iteration, stopping auto-population")
-            break
-    
-    print(f"Auto-population complete: {total_comments} total comments in thread")
+        print(f"Auto-population complete for question {question_id} with {comments_count} comments/answers")
+    except Exception as e:
+        print(f"Error in auto_populate_thread: {str(e)}")
 
 
 def _create_ai_answer(ai_user, question):
@@ -1048,8 +1151,16 @@ def _create_ai_reply(ai_user, comment):
         return None
     
     # Prepare content text and context text for the template
-    content_text = f"Comment: {comment.body}\n\nAs {personality.name}, continue the discussion by providing additional insights, clarifications, or a different perspective."
+    content_text = ""
     context_text = f"Question: {question.title}\n\n{question.body}"
+    
+    if comment.parent_comment_id is None:
+        # This is an answer (top-level comment) to a question
+        content_text = f"User's answer: {comment.body}\n\nAs {personality.name}, continue the discussion by providing additional insights, clarifications, or a different perspective on this answer."
+    else:
+        # This is a reply to another comment
+        parent_comment = Comment.query.get(comment.parent_comment_id)
+        content_text = f"Original comment: {parent_comment.body}\n\nUser's reply: {comment.body}\n\nAs {personality.name}, continue the discussion with relevant information, insights, or questions."
     
     # Format the prompt using the personality's template
     formatted_prompt = personality.prompt_template

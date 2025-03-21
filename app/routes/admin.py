@@ -322,13 +322,18 @@ def questions():
     # Get questions and pagination
     questions = query.all()
     
+    # Create a dictionary to store metadata for each question
+    question_meta = {}
+    
     # Process each question to convert lazy-loaded relationships to actual counts
     for question in questions:
-        # Attach answer count and has_accepted_answer properties
-        question.answer_count = question.answers.count()
-        question.has_accepted_answer = any(answer.is_accepted for answer in question.answers)
+        # Store answer count and has_accepted_answer in the metadata dictionary
+        question_meta[question.id] = {
+            'answer_count': question.answers.count(),
+            'has_accepted_answer': any(answer.is_accepted for answer in question.answers)
+        }
     
-    return render_template('admin/questions.html', questions=questions)
+    return render_template('admin/questions.html', questions=questions, question_meta=question_meta)
 
 
 @admin_bp.route('/questions/<int:question_id>/delete', methods=['POST'])
@@ -831,12 +836,13 @@ def toggle_question_closed(question_id):
 def populate_thread(question_id):
     """Manually trigger auto-population of a thread"""
     from app.routes.questions import auto_populate_thread
+    from app.services.llm_service import queue_task
     
     # Get the question
     question = Question.query.get_or_404(question_id)
     
     # Run the auto-population
-    auto_populate_thread(question_id)
+    queue_task(auto_populate_thread, question_id, parallel=True)
     
     flash(f'Auto-population started for question: {question.title}', 'success')
     return redirect(url_for('admin.questions'))
