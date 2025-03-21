@@ -201,44 +201,36 @@ def vote():
             
         db.session.add(new_vote)
     
-    # Update reputation for voted content
-    if question_id:
-        question = Question.query.get_or_404(question_id)
-        owner = question.author
-        rep_change = 5 if vote_type == 1 else -2
-        owner.reputation += rep_change
-    elif comment_id:
-        comment = Comment.query.get_or_404(comment_id)
-        owner = comment.author
-        # Top-level comments (answers) get more reputation
-        if comment.parent_comment_id is None:
-            rep_change = 10 if vote_type == 1 else -2
-        else:
-            rep_change = 2 if vote_type == 1 else -1
-        owner.reputation += rep_change
-    
-    db.session.commit()
+    try:
+        # Update reputation for voted content
+        if question_id:
+            question = Question.query.get_or_404(question_id)
+            owner = question.author
+            rep_change = 5 if vote_type == 1 else -2
+            owner.reputation += rep_change
+        elif comment_id:
+            comment = Comment.query.get_or_404(comment_id)
+            owner = comment.author
+            # Top-level comments (answers) get more reputation
+            if comment.parent_comment_id is None:
+                rep_change = 10 if vote_type == 1 else -2
+            else:
+                rep_change = 2 if vote_type == 1 else -1
+            owner.reputation += rep_change
+        
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Failed to update vote'}), 500
     
     # Trigger AI response if this is a real user (not an AI)
     if not current_user.is_ai:
         # Queue AI response to the vote in the background
         from app.routes.questions import ai_respond_to_vote
         
-        # Create a new vote object to pass to the AI responder with proper relationships
-        vote_to_process = Vote(
-            user_id=current_user.id,
-            vote_type=vote_type
-        )
-        
-        # Explicitly set the question or comment objects, not just the IDs
-        if question_id:
-            question = Question.query.get_or_404(question_id)
-            vote_to_process.question_id = question_id
-            vote_to_process.question = question  # Set the actual question object
-        elif comment_id:
-            comment = Comment.query.get_or_404(comment_id)
-            vote_to_process.comment_id = comment_id
-            vote_to_process.comment = comment  # Set the actual comment object
+        # Instead of creating a new vote, use the existing one if it's an update
+        # or the new one if it's a new vote
+        vote_to_process = existing_vote if existing_vote else new_vote
             
         ai_respond_to_vote(vote_to_process)
     

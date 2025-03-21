@@ -655,19 +655,31 @@ def ai_respond_to_vote(vote):
             db.session.add(result)
             print(f"Added AI answer to question {question_id}")
         elif content_type == "comment":
+            # Get the original comment to ensure we have the correct question_id
+            original_comment = Comment.query.get(comment_id)
+            if not original_comment:
+                print(f"Failed to find original comment {comment_id}")
+                return None
+                
             # Create a reply to the comment
             reply = Comment(
                 body=response,
                 user_id=ai_user.id,
-                question_id=question.id,
-                parent_comment_id=comment_id
+                question_id=original_comment.question_id,  # Use the comment's question_id to ensure proper association
+                parent_comment_id=comment_id  # Set this comment as a direct reply to the voted comment
             )
             db.session.add(reply)
             result = reply
             print(f"Added AI reply to comment {comment_id}")
         
-        db.session.commit()
-        return result
+        try:
+            db.session.commit()
+            print(f"Successfully saved AI response")
+            return result
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error saving AI response: {str(e)}")
+            return None
 
 
 def ai_respond_to_comment(comment_id):
