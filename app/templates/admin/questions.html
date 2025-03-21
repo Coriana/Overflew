@@ -104,16 +104,21 @@
                                 <td>{{ question.views }}</td>
                                 <td>{{ question.created_at.strftime('%Y-%m-%d') }}</td>
                                 <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="{{ url_for('questions.view', question_id=question.id) }}" class="btn btn-outline-primary">
-                                            <i class="fa-solid fa-eye"></i>
-                                        </a>
-                                        <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#toggleClosedModal" data-question-id="{{ question.id }}" data-is-closed="{{ question.is_closed }}">
-                                            <i class="fa-solid fa-{{ 'lock-open' if question.is_closed else 'lock' }}"></i>
-                                        </button>
-                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-question-id="{{ question.id }}" data-question-title="{{ question.title }}">
-                                            <i class="fa-solid fa-trash"></i>
-                                        </button>
+                                    <div class="btn-group" role="group">
+                                        <a href="{{ url_for('questions.view', question_id=question.id) }}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="View"><i class="fa-solid fa-eye"></i></a>
+                                        <a href="{{ url_for('questions.edit', question_id=question.id) }}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Edit"><i class="fa-solid fa-edit"></i></a>
+                                        
+                                        {% if question.is_closed %}
+                                            <a href="{{ url_for('admin.toggle_question_closed', question_id=question.id) }}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Reopen"><i class="fa-solid fa-lock-open"></i></a>
+                                        {% else %}
+                                            <a href="{{ url_for('admin.toggle_question_closed', question_id=question.id) }}" class="btn btn-sm btn-outline-warning" data-bs-toggle="tooltip" title="Close"><i class="fa-solid fa-lock"></i></a>
+                                        {% endif %}
+                                        
+                                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-question-id="{{ question.id }}" data-question-title="{{ question.title }}" data-bs-tooltip="tooltip" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                                        
+                                        <form method="POST" action="{{ url_for('admin.populate_thread', question_id=question.id) }}" style="display: inline;">
+                                            <button type="submit" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Auto-Populate Thread"><i class="fa-solid fa-robot"></i></button>
+                                        </form>
                                     </div>
                                 </td>
                             </tr>

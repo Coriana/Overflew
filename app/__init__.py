@@ -105,6 +105,13 @@ def create_app(test_config=None):
 
     # Import models
     from app.models import User, Question, Answer, Comment, Vote, Tag, QuestionTag, AIPersonality
+    from app.models.site_settings import SiteSettings
+
+    # Create tables and initialize settings
+    with app.app_context():
+        db.create_all()  # Make sure tables exist first
+        SiteSettings.init_settings()
+        app.logger.info('Database tables created and site settings initialized')
 
     # Create database tables
     @app.cli.command('init-db')

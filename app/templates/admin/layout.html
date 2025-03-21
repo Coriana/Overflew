@@ -7,11 +7,12 @@
     <!-- Admin Sidebar -->
     <div class="col-md-3">
         <div class="list-group mb-4">
-            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action {{ 'active' if request.endpoint == 'admin.index' }}">Dashboard</a>
-            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action {{ 'active' if request.endpoint == 'admin.ai_personalities' or request.endpoint == 'admin.new_ai_personality' or request.endpoint == 'admin.edit_ai_personality' }}">AI Personalities</a>
-            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action {{ 'active' if request.endpoint == 'admin.users' }}">Users</a>
-            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action {{ 'active' if request.endpoint == 'admin.questions' }}">Questions</a>
-            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action {{ 'active' if request.endpoint == 'admin.tags' or request.endpoint == 'admin.edit_tag' or request.endpoint == 'admin.merge_tags' }}">Tags</a>
+            <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin.index' %}active{% endif %}">Dashboard</a>
+            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin.ai_personalities' or request.endpoint == 'admin.new_ai_personality' or request.endpoint == 'admin.edit_ai_personality' %}active{% endif %}">AI Personalities</a>
+            <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin.users' %}active{% endif %}">Users</a>
+            <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin.questions' %}active{% endif %}">Questions</a>
+            <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin.tags' or request.endpoint == 'admin.edit_tag' or request.endpoint == 'admin.merge_tags' %}active{% endif %}">Tags</a>
+            <a href="{{ url_for('admin.settings') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin.settings' %}active{% endif %}">Settings</a>
         </div>
     </div>
     

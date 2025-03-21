@@ -823,3 +823,53 @@ def toggle_question_closed(question_id):
     status = 'closed' if question.is_closed else 'reopened'
     flash(f'Question has been {status}.', 'success')
     return redirect(url_for('admin.questions'))
+
+
+@admin_bp.route('/populate_thread/<int:question_id>', methods=['POST'])
+@login_required
+@admin_required
+def populate_thread(question_id):
+    """Manually trigger auto-population of a thread"""
+    from app.routes.questions import auto_populate_thread
+    
+    # Get the question
+    question = Question.query.get_or_404(question_id)
+    
+    # Run the auto-population
+    auto_populate_thread(question_id)
+    
+    flash(f'Auto-population started for question: {question.title}', 'success')
+    return redirect(url_for('admin.questions'))
+
+
+@admin_bp.route('/settings', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def settings():
+    from app.models.site_settings import SiteSettings
+    
+    if request.method == 'POST':
+        # Update settings
+        SiteSettings.set('ai_auto_populate_enabled', 
+                        request.form.get('ai_auto_populate_enabled') == 'on',
+                        'Enable/disable automatic AI thread population')
+        
+        SiteSettings.set('ai_auto_populate_max_comments', 
+                        request.form.get('ai_auto_populate_max_comments', '150'),
+                        'Maximum number of AI comments per thread')
+        
+        SiteSettings.set('ai_auto_populate_personalities', 
+                        request.form.get('ai_auto_populate_personalities', '7'),
+                        'Number of AI personalities to involve per question')
+        
+        flash('Settings updated successfully', 'success')
+        return redirect(url_for('admin.settings'))
+    
+    # Get current settings with defaults
+    settings = {
+        'ai_auto_populate_enabled': SiteSettings.get('ai_auto_populate_enabled', False),
+        'ai_auto_populate_max_comments': SiteSettings.get('ai_auto_populate_max_comments', 150),
+        'ai_auto_populate_personalities': SiteSettings.get('ai_auto_populate_personalities', 7)
+    }
+    
+    return render_template('admin/settings.html', settings=settings)

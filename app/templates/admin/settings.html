@@ -1,0 +1,36 @@
+{% extends 'admin/layout.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Site Settings</h1>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="h5 mb-0">AI Auto-Population Settings</h2>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.settings') }}">
+                <div class="form-group form-check mb-3">
+                    <input type="checkbox" class="form-check-input" id="ai_auto_populate_enabled" name="ai_auto_populate_enabled" {% if settings.ai_auto_populate_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="ai_auto_populate_enabled">Enable AI Auto-Population</label>
+                    <small class="form-text text-muted">When enabled, AI personalities will automatically populate threads with responses</small>
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="ai_auto_populate_max_comments">Maximum Comments Per Thread</label>
+                    <input type="number" class="form-control" id="ai_auto_populate_max_comments" name="ai_auto_populate_max_comments" value="{{ settings.ai_auto_populate_max_comments }}" min="1" max="1000">
+                    <small class="form-text text-muted">Maximum number of AI comments to generate per thread</small>
+                </div>
+                
+                <div class="form-group mb-3">
+                    <label for="ai_auto_populate_personalities">AI Personalities Per Question</label>
+                    <input type="number" class="form-control" id="ai_auto_populate_personalities" name="ai_auto_populate_personalities" value="{{ settings.ai_auto_populate_personalities }}" min="1" max="50">
+                    <small class="form-text text-muted">Number of AI personalities that will interact with each thread</small>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
