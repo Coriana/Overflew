@@ -173,8 +173,9 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form id="delete-form" action="{{ url_for('admin.delete_tag', tag_name='') }}" method="post">
+                <form id="delete-form" action="{{ url_for('admin.edit_tag', tag_name='') }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="delete">
                     <button type="submit" class="btn btn-danger">Delete</button>
                 </form>
             </div>

@@ -94,9 +94,9 @@
                                 </td>
                                 <td>{{ question.score }}</td>
                                 <td>
-                                    <span class="{{ 'text-success' if question.answer_count > 0 and question.has_accepted_answer else 'text-warning' if question.answer_count > 0 else 'text-muted' }}">
-                                        {{ question.answer_count }}
-                                        {% if question.has_accepted_answer %}
+                                    <span class="{{ 'text-success' if question_meta[question.id].answer_count > 0 and question_meta[question.id].has_accepted_answer else 'text-warning' if question_meta[question.id].answer_count > 0 else 'text-muted' }}">
+                                        {{ question_meta[question.id].answer_count }}
+                                        {% if question_meta[question.id].has_accepted_answer %}
                                             <i class="fa-solid fa-check-circle"></i>
                                         {% endif %}
                                     </span>
