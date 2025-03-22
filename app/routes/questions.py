@@ -445,14 +445,15 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
             base_url=ai_personality.custom_base_url
         )
         
-        # Create the answer
-        answer = Answer(
+        # Create the answer as a comment
+        comment = Comment(
             body=answer_text,
             question_id=question.id,
-            user_id=ai_user.id
+            user_id=ai_user.id,
+            parent_comment_id=None  # This is a top-level comment
         )
         
-        db.session.add(answer)
+        db.session.add(comment)
         db.session.commit()
         
         return True, f"AI answer generated successfully by {ai_personality.name}"
