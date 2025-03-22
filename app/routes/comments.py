@@ -286,6 +286,11 @@ def ai_respond_to_comment(comment_id, question_id):
         print(f"Question ID {question_id} not found")
         return
     
+    # Check if the question is marked as answered
+    if question.is_answered:
+        print(f"Question {question_id} is marked as answered, skipping AI response to comment")
+        return
+    
     # Get the parent comment if it exists
     parent_comment = None
     if comment.parent_comment_id:
@@ -410,6 +415,11 @@ def ai_respond_to_vote(vote_id):
     question = Question.query.get(comment.question_id)
     if not question:
         print(f"Question ID {comment.question_id} not found")
+        return
+    
+    # Check if the question is marked as answered
+    if question.is_answered:
+        print(f"Question {question.id} is marked as answered, skipping AI response to vote")
         return
     
     # Only respond to significant votes (many upvotes or downvotes)

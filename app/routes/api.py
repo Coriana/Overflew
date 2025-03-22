@@ -409,6 +409,20 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
         if not content_item:
             current_app.logger.warning(f"Content item {content_type}:{content_id} not found")
             return
+        
+        # If this is a question or a comment on a question that's marked as answered, don't respond
+        if content_type == 'question' and content_item.is_answered:
+            current_app.logger.info(f"Question {content_id} is marked as answered, skipping AI response")
+            return
+        elif content_type == 'comment':
+            # For comments, check if the parent question is marked as answered
+            question = None
+            if content_item.question_id:
+                question = Question.query.get(content_item.question_id)
+            
+            if question and question.is_answered:
+                current_app.logger.info(f"Comment {content_id} belongs to answered question {question.id}, skipping AI response")
+                return
             
         # Get the AI personality
         ai_personality = AIPersonality.query.get(ai_personality_id)

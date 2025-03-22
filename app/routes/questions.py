@@ -442,7 +442,7 @@ def _generate_ai_answer(prompt, ai_user_id=None, ai_personality_id=None,
         else:
             # Create a default AI personality and user
             print("No AI personalities found, creating default")
-            personality = AIPersonality(
+            default_personality = AIPersonality(
                 name="AI Assistant",
                 description="A helpful AI assistant",
                 expertise="General knowledge,Programming,Problem solving",
@@ -454,17 +454,17 @@ def _generate_ai_answer(prompt, ai_user_id=None, ai_personality_id=None,
                 prompt_template="You are a helpful AI assistant providing information on {{content}}",
                 is_active=True
             )
-            db.session.add(personality)
+            db.session.add(default_personality)
             db.session.commit()
             
             # Create a user for the default personality
             from werkzeug.security import generate_password_hash
             ai_user = User(
-                username=personality.name,
-                email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+                username=default_personality.name,
+                email=f"{default_personality.name.lower().replace(' ', '.')}@overflew.ai",
                 password_hash=generate_password_hash("AI_USER_PASSWORD"),
                 is_ai=True,
-                ai_personality_id=personality.id
+                ai_personality_id=default_personality.id
             )
             db.session.add(ai_user)
             db.session.commit()
@@ -572,6 +572,10 @@ def ai_respond_to_vote(vote):
             content = vote.question
             if content:  # Check if question exists
                 question_id = content.id
+                # Check if the question is marked as answered
+                if content.is_answered:
+                    print(f"Question {content.id} is marked as answered, skipping AI response to vote")
+                    return None
             else:
                 print(f"Question not found for vote {vote.id}")
                 return None
@@ -581,6 +585,13 @@ def ai_respond_to_vote(vote):
             if content:  # Check if comment exists
                 comment_id = content.id
                 question_id = content.question_id
+                
+                # Check if the parent question is marked as answered
+                if question_id:
+                    question = Question.query.get(question_id)
+                    if question and question.is_answered:
+                        print(f"Question {question_id} for comment {comment_id} is marked as answered, skipping AI response to vote")
+                        return None
             else:
                 print(f"Comment not found for vote {vote.id}")
                 return None
@@ -608,7 +619,7 @@ def ai_respond_to_vote(vote):
         
         # If still no personalities, create a default one
         if not personalities:
-            print("No AI personalities found, creating a default one")
+            print("No AI personalities found, creating default")
             default_personality = AIPersonality(
                 name="AI Assistant",
                 description="A helpful AI assistant",
@@ -804,6 +815,11 @@ def ai_respond_to_comment(comment_id):
         
         if not question:
             print(f"Question not found for comment {comment_id}")
+            return None
+        
+        # Check if the question is marked as answered
+        if question.is_answered:
+            print(f"Question {question.id} is marked as answered, skipping AI response to comment")
             return None
         
         # Check if AI should respond (25% chance)
