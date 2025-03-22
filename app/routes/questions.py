@@ -170,9 +170,17 @@ def view(question_id):
             
             attach_vote_info(top_level_comments)
     
+    # Get AI personalities for the AI responder modal
+    from app.models.ai_personality import AIPersonality
+    from app.models.user import User
+    
+    # Get AI users with their personalities
+    ai_users = User.query.filter_by(is_ai=True).all()
+    
     return render_template('questions/view.html', 
                           question=question, 
-                          comments=top_level_comments)
+                          comments=top_level_comments,
+                          ai_personalities=ai_users)
 
 
 @questions_bp.route('/<int:question_id>/edit', methods=['GET', 'POST'])
@@ -918,7 +926,7 @@ def ai_respond_to_comment(comment_id):
             body=response,
             user_id=ai_user.id,
             question_id=question.id,
-            parent_comment_id=comment_id  # This is a reply to the user's comment
+            parent_comment_id=comment.id  # This is a reply to the user's comment
         )
         
         db.session.add(result)
@@ -1045,16 +1053,6 @@ def auto_populate_thread(question_id):
             
             # Use direct comment creation for more control over the AI reply process
             try:
-                # Create a new comment
-                reply = Comment(
-                    body=f"AI reply from {ai_user.username} to {content_type} {parent_comment.id}",
-                    user_id=ai_user.id,
-                    question_id=question.id,
-                    parent_comment_id=parent_comment.id
-                )
-                db.session.add(reply)
-                db.session.commit()
-                
                 # Update with AI-generated content
                 from app.models.ai_personality import AIPersonality
                 ai_personality = AIPersonality.query.get(ai_user.ai_personality_id)
@@ -1102,8 +1100,14 @@ def auto_populate_thread(question_id):
                     from app.services.llm_service import get_completion
                     response = get_completion(prompt, max_tokens=1024)
                     
-                    # Update the reply with the AI-generated content
-                    reply.body = response
+                    # Create a new comment with the AI-generated content
+                    reply = Comment(
+                        body=response,
+                        user_id=ai_user.id,
+                        question_id=question.id,
+                        parent_comment_id=parent_comment.id
+                    )
+                    db.session.add(reply)
                     db.session.commit()
                 
                 print(f"Added AI reply from {ai_user.username} to {content_type} {parent_comment.id}")

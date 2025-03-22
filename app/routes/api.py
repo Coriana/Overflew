@@ -318,55 +318,328 @@ def accept_comment(comment_id):
 @api_bp.route('/ai/respond', methods=['POST'])
 @login_required
 def ai_respond():
-    """API endpoint to trigger an AI response to a post"""
+    """API endpoint to generate an AI response to a question or comment"""
     data = request.json
     
     if not data:
-        return jsonify({'error': 'Invalid data'}), 400
+        return jsonify({'error': 'No data provided'}), 400
     
     content_type = data.get('content_type')
     content_id = data.get('content_id')
+    personality_id = data.get('personality_id')
     
-    if not content_type or not content_id:
-        return jsonify({'error': 'Must specify content_type and content_id'}), 400
+    if not content_type or not content_id or not personality_id:
+        return jsonify({'error': 'Missing required parameters'}), 400
     
+    # Validate content type
     if content_type not in ['question', 'comment']:
-        return jsonify({'error': 'Invalid content_type'}), 400
+        return jsonify({'error': 'Invalid content type'}), 400
     
     # Get the content item
     content_item = None
     if content_type == 'question':
         content_item = Question.query.get(content_id)
-    else:  # comment
+    elif content_type == 'comment':
         content_item = Comment.query.get(content_id)
     
     if not content_item:
-        return jsonify({'error': 'Content not found'}), 404
+        return jsonify({'error': f'{content_type.capitalize()} not found'}), 404
+    
+    # Check if the question is marked as answered
+    question = None
+    if content_type == 'question':
+        question = content_item
+    elif content_type == 'comment':
+        question = Question.query.get(content_item.question_id)
+    
+    if question and question.is_answered:
+        return jsonify({'error': 'This question is marked as answered. AI responses are disabled.'}), 400
     
     # Get the AI personality
-    ai_personality_id = data.get('personality_id')
-    if not ai_personality_id:
-        return jsonify({'error': 'Must specify personality_id'}), 400
-    
-    ai_personality = AIPersonality.query.get(ai_personality_id)
-    if not ai_personality:
+    personality = AIPersonality.query.get(personality_id)
+    if not personality:
         return jsonify({'error': 'AI Personality not found'}), 404
     
-    # Queue the AI response generation task to run asynchronously with parallel=True for concurrency
-    queue_task(
-        generate_ai_response, 
-        content_type, 
-        content_id, 
-        ai_personality_id,
-        parallel=True  # Enable true parallel processing
-    )
+    # Get or create the AI user for this personality
+    ai_user = User.query.filter_by(username=personality.name).first()
+    if not ai_user:
+        print(f"Creating AI user for {personality.name}")
+        from werkzeug.security import generate_password_hash
+        ai_user = User(
+            username=personality.name,
+            email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+            password_hash=generate_password_hash("AI_USER_PASSWORD"),
+            is_ai=True,
+            ai_personality_id=personality.id
+        )
+        db.session.add(ai_user)
+        db.session.commit()
     
-    # Return immediately with a success message
+    # Generate the AI response
+    if content_type == 'question':
+        # Generate a response to the question
+        from app.routes.questions import _create_ai_answer
+        response = _create_ai_answer(ai_user, content_item)
+    else:
+        # Generate a response to the comment
+        from app.routes.questions import _create_ai_reply
+        response = _create_ai_reply(ai_user, content_item)
+    
+    if response:
+        return jsonify({
+            'success': True,
+            'response': {
+                'id': response.id,
+                'body': response.body,
+                'html_content': response.html_content,
+                'author': {
+                    'username': ai_user.username,
+                    'is_ai': True
+                },
+                'created_at': response.created_at.isoformat(),
+                'score': 0
+            }
+        })
+    else:
+        return jsonify({'error': 'Failed to generate AI response'}), 500
+
+
+@api_bp.route('/comments/children/<int:parent_id>')
+def get_comment_children(parent_id):
+    """
+    API endpoint to get child comments for a parent comment
+    Used for loading more comments in a thread
+    """
+    skip = request.args.get('skip', 0, type=int)
+    limit = request.args.get('limit', 5, type=int)  # Default to 5 comments per load
+    
+    # Get the parent comment
+    parent_comment = Comment.query.get_or_404(parent_id)
+    
+    # Get child comments with pagination
+    child_comments = Comment.query.filter_by(
+        parent_comment_id=parent_id
+    ).order_by(Comment.score.desc(), Comment.created_at.asc()).offset(skip).limit(limit).all()
+    
+    # Count remaining comments
+    total_children = Comment.query.filter_by(parent_comment_id=parent_id).count()
+    remaining = total_children - (skip + len(child_comments))
+    
+    # Format the comments
+    comments_data = []
+    for comment in child_comments:
+        # Format each comment including replies
+        comment_data = format_comment_data(comment)
+        comments_data.append(comment_data)
+    
     return jsonify({
         'success': True,
-        'message': 'AI response generation queued',
-        'response': {'id': 'pending'}  # Temporary placeholder for the response
+        'comments': comments_data,
+        'total_remaining': remaining
     })
+
+
+@api_bp.route('/comments/thread/<int:parent_id>')
+def get_comment_thread(parent_id):
+    """
+    API endpoint to get a full thread of comments starting from a parent
+    Used for the "continue this thread" feature
+    """
+    # Get the parent comment
+    parent_comment = Comment.query.get_or_404(parent_id)
+    
+    # Get all child comments (up to a reasonable limit)
+    child_comments = Comment.query.filter_by(
+        parent_comment_id=parent_id
+    ).order_by(Comment.score.desc(), Comment.created_at.asc()).limit(50).all()
+    
+    # Format the comments
+    comments_data = []
+    for comment in child_comments:
+        # Format each comment including replies
+        comment_data = format_comment_data(comment)
+        comments_data.append(comment_data)
+    
+    return jsonify({
+        'success': True,
+        'comments': comments_data
+    })
+
+
+def format_comment_data(comment, include_replies=True, max_depth=2, current_depth=0):
+    """
+    Helper function to format a comment and its replies into a JSON-serializable format
+    """
+    # Get the user vote if authenticated
+    user_vote = 0
+    if current_user.is_authenticated:
+        vote = Vote.query.filter_by(user_id=current_user.id, comment_id=comment.id).first()
+        if vote:
+            user_vote = vote.vote_type
+    
+    # Format the base comment data
+    comment_data = {
+        'id': comment.id,
+        'body': comment.body,
+        'html_content': comment.html_content,
+        'author_id': comment.author_id,
+        'author_username': comment.author.username if comment.author else '[deleted]',
+        'author_is_ai': comment.author.is_ai if comment.author else False,
+        'score': comment.score,
+        'created_at': comment.created_at.isoformat(),
+        'is_deleted': comment.is_deleted,
+        'user_vote': user_vote,
+        'replies': []
+    }
+    
+    # Include replies recursively, but limit depth to avoid too much data
+    if include_replies and current_depth < max_depth:
+        replies = Comment.query.filter_by(parent_comment_id=comment.id).all()
+        for reply in replies:
+            reply_data = format_comment_data(
+                reply, 
+                include_replies=True,
+                max_depth=max_depth,
+                current_depth=current_depth + 1
+            )
+            comment_data['replies'].append(reply_data)
+    
+    return comment_data
+
+
+@api_bp.route('/comments/<int:comment_id>/delete', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    """API endpoint to soft delete a comment"""
+    comment = Comment.query.get_or_404(comment_id)
+    
+    # Check if user is authorized to delete the comment
+    if comment.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Soft delete the comment
+    comment.soft_delete()
+    
+    return jsonify({'success': True, 'message': 'Comment deleted successfully'})
+
+
+@api_bp.route('/tags/search')
+def search_tags():
+    """API endpoint to search for tags"""
+    query = request.args.get('q', '')
+    
+    if not query:
+        return jsonify({'tags': []})
+    
+    tags = db.session.query(tag_model.Tag).filter(
+        tag_model.Tag.name.ilike(f'%{query}%')
+    ).limit(10).all()
+    
+    result = [{'id': tag.id, 'name': tag.name} for tag in tags]
+    
+    return jsonify({'tags': result})
+
+
+@api_bp.route('/ai_personalities')
+def ai_personalities():
+    """API endpoint to get all AI personalities"""
+    personalities = AIPersonality.query.all()
+    
+    result = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'description': p.description,
+            'expertise': p.expertise,
+            'personality_traits': p.personality_traits,
+            'interaction_style': p.interaction_style,
+            'helpfulness_level': p.helpfulness_level,
+            'strictness_level': p.strictness_level,
+            'avatar_url': p.avatar_url
+        } for p in personalities
+    ]
+    
+    return jsonify({'personalities': result})
+
+
+@api_bp.route('/questions/<int:question_id>/stream', methods=['GET'])
+def stream_question_updates(question_id):
+    """Stream updates for a question using Server-Sent Events (SSE)"""
+    from flask import Response, stream_with_context
+    import json
+    import time
+    
+    # Check if the question exists
+    question = Question.query.get_or_404(question_id)
+    
+    def generate():
+        # Keep track of the last comment ID we've seen
+        last_comment_id = request.args.get('last_comment_id', 0, type=int)
+        print(f"SSE: Starting stream for question {question_id}, last_comment_id={last_comment_id}")
+        
+        # Keep the connection alive for a reasonable amount of time (5 minutes)
+        end_time = time.time() + 300
+        heartbeat_time = time.time() + 15  # Send heartbeat every 15 seconds
+        
+        while time.time() < end_time:
+            try:
+                # Get new comments for this question
+                new_comments = Comment.query.filter(
+                    Comment.question_id == question_id,
+                    Comment.id > last_comment_id
+                ).order_by(Comment.id.asc()).all()
+                
+                if new_comments:
+                    # Update the last comment ID
+                    last_comment_id = max(comment.id for comment in new_comments)
+                    print(f"SSE: Found {len(new_comments)} new comments, new last_comment_id={last_comment_id}")
+                    
+                    # Prepare comment data
+                    comment_data = []
+                    for comment in new_comments:
+                        # Get the parent comment ID if it exists
+                        parent_id = comment.parent_comment_id
+                        
+                        # Create a comment object with essential data
+                        comment_obj = {
+                            'id': comment.id,
+                            'body': comment.body,
+                            'html_content': comment.html_content,
+                            'score': comment.score,
+                            'created_at': comment.created_at.isoformat(),
+                            'parent_comment_id': parent_id,
+                            'author': {
+                                'username': comment.author.username if comment.author else '[deleted]',
+                                'is_ai': comment.author.is_ai if comment.author else False
+                            }
+                        }
+                        comment_data.append(comment_obj)
+                    
+                    # Send the data as an SSE event
+                    data_json = json.dumps({'comments': comment_data})
+                    print(f"SSE: Sending data: {data_json[:100]}...")  # Print first 100 chars for debugging
+                    yield f"data: {data_json}\n\n"
+                
+                # Send a heartbeat periodically to keep the connection alive
+                if time.time() > heartbeat_time:
+                    yield f"data: {json.dumps({'heartbeat': time.time()})}\n\n"
+                    heartbeat_time = time.time() + 15  # Reset heartbeat timer
+                
+                # Sleep for a bit to avoid hammering the database
+                time.sleep(1)
+            except Exception as e:
+                print(f"SSE: Error in stream: {str(e)}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                time.sleep(5)  # Sleep longer on error
+    
+    return Response(stream_with_context(generate()), 
+                   mimetype='text/event-stream',
+                   headers={
+                       'Cache-Control': 'no-cache',
+                       'X-Accel-Buffering': 'no',  # Disable buffering in Nginx
+                       'Connection': 'keep-alive'
+                   })
+
 
 def determine_vote_type(ai_personality, content):
     """
@@ -573,161 +846,3 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
     except Exception as e:
         current_app.logger.error(f"Error generating AI response: {str(e)}")
         db.session.rollback()
-
-
-@api_bp.route('/comments/children/<int:parent_id>')
-def get_comment_children(parent_id):
-    """
-    API endpoint to get child comments for a parent comment
-    Used for loading more comments in a thread
-    """
-    skip = request.args.get('skip', 0, type=int)
-    limit = request.args.get('limit', 5, type=int)  # Default to 5 comments per load
-    
-    # Get the parent comment
-    parent_comment = Comment.query.get_or_404(parent_id)
-    
-    # Get child comments with pagination
-    child_comments = Comment.query.filter_by(
-        parent_comment_id=parent_id
-    ).order_by(Comment.score.desc(), Comment.created_at.asc()).offset(skip).limit(limit).all()
-    
-    # Count remaining comments
-    total_children = Comment.query.filter_by(parent_comment_id=parent_id).count()
-    remaining = total_children - (skip + len(child_comments))
-    
-    # Format the comments
-    comments_data = []
-    for comment in child_comments:
-        # Format each comment including replies
-        comment_data = format_comment_data(comment)
-        comments_data.append(comment_data)
-    
-    return jsonify({
-        'success': True,
-        'comments': comments_data,
-        'total_remaining': remaining
-    })
-
-
-@api_bp.route('/comments/thread/<int:parent_id>')
-def get_comment_thread(parent_id):
-    """
-    API endpoint to get a full thread of comments starting from a parent
-    Used for the "continue this thread" feature
-    """
-    # Get the parent comment
-    parent_comment = Comment.query.get_or_404(parent_id)
-    
-    # Get all child comments (up to a reasonable limit)
-    child_comments = Comment.query.filter_by(
-        parent_comment_id=parent_id
-    ).order_by(Comment.score.desc(), Comment.created_at.asc()).limit(50).all()
-    
-    # Format the comments
-    comments_data = []
-    for comment in child_comments:
-        # Format each comment including replies
-        comment_data = format_comment_data(comment)
-        comments_data.append(comment_data)
-    
-    return jsonify({
-        'success': True,
-        'comments': comments_data
-    })
-
-
-def format_comment_data(comment, include_replies=True, max_depth=2, current_depth=0):
-    """
-    Helper function to format a comment and its replies into a JSON-serializable format
-    """
-    # Get the user vote if authenticated
-    user_vote = 0
-    if current_user.is_authenticated:
-        vote = Vote.query.filter_by(user_id=current_user.id, comment_id=comment.id).first()
-        if vote:
-            user_vote = vote.vote_type
-    
-    # Format the base comment data
-    comment_data = {
-        'id': comment.id,
-        'body': comment.body,
-        'html_content': comment.html_content,
-        'author_id': comment.author_id,
-        'author_username': comment.author.username if comment.author else '[deleted]',
-        'author_is_ai': comment.author.is_ai if comment.author else False,
-        'score': comment.score,
-        'created_at': comment.created_at.isoformat(),
-        'is_deleted': comment.is_deleted,
-        'user_vote': user_vote,
-        'replies': []
-    }
-    
-    # Include replies recursively, but limit depth to avoid too much data
-    if include_replies and current_depth < max_depth:
-        replies = Comment.query.filter_by(parent_comment_id=comment.id).all()
-        for reply in replies:
-            reply_data = format_comment_data(
-                reply, 
-                include_replies=True,
-                max_depth=max_depth,
-                current_depth=current_depth + 1
-            )
-            comment_data['replies'].append(reply_data)
-    
-    return comment_data
-
-
-@api_bp.route('/comments/<int:comment_id>/delete', methods=['POST'])
-@login_required
-def delete_comment(comment_id):
-    """API endpoint to soft delete a comment"""
-    comment = Comment.query.get_or_404(comment_id)
-    
-    # Check if user is authorized to delete the comment
-    if comment.user_id != current_user.id and not current_user.is_admin:
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    # Soft delete the comment
-    comment.soft_delete()
-    
-    return jsonify({'success': True, 'message': 'Comment deleted successfully'})
-
-
-@api_bp.route('/tags/search')
-def search_tags():
-    """API endpoint to search for tags"""
-    query = request.args.get('q', '')
-    
-    if not query:
-        return jsonify({'tags': []})
-    
-    tags = db.session.query(tag_model.Tag).filter(
-        tag_model.Tag.name.ilike(f'%{query}%')
-    ).limit(10).all()
-    
-    result = [{'id': tag.id, 'name': tag.name} for tag in tags]
-    
-    return jsonify({'tags': result})
-
-
-@api_bp.route('/ai_personalities')
-def ai_personalities():
-    """API endpoint to get all AI personalities"""
-    personalities = AIPersonality.query.all()
-    
-    result = [
-        {
-            'id': p.id,
-            'name': p.name,
-            'description': p.description,
-            'expertise': p.expertise,
-            'personality_traits': p.personality_traits,
-            'interaction_style': p.interaction_style,
-            'helpfulness_level': p.helpfulness_level,
-            'strictness_level': p.strictness_level,
-            'avatar_url': p.avatar_url
-        } for p in personalities
-    ]
-    
-    return jsonify({'personalities': result})

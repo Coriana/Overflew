@@ -2,8 +2,18 @@
 
 {% block title %}{{ question.title }} - Overflew{% endblock %}
 
+{% block head %}
+<meta name="question-id" content="{{ question.id }}">
+<meta name="question-answered" content="{{ 'true' if question.is_answered else 'false' }}">
+{% endblock %}
+
 {% block content %}
 <div id="alerts-container"></div>
+
+<!-- Audio element for notification sound -->
+<audio id="notification-sound" preload="auto">
+    <source src="{{ url_for('static', filename='sounds/notification.mp3') }}" type="audio/mpeg">
+</audio>
 
 <!-- Recursive Comment Macro -->
 {% macro render_comment(comment, level=0, parent_id=0, max_depth=7, max_shown=3) %}
@@ -377,6 +387,14 @@
                         <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="newest">Newest</button>
                         <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="oldest">Oldest</button>
                         <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="controversial">Controversial</button>
+                    </div>
+                    
+                    <!-- Notification sound toggle -->
+                    <div class="form-check form-switch d-inline-block ms-3">
+                        <input class="form-check-input" type="checkbox" id="notification-sound-toggle" checked>
+                        <label class="form-check-label" for="notification-sound-toggle">
+                            <i class="fa-solid fa-volume-high"></i> Notification Sounds
+                        </label>
                     </div>
                 </div>
                 

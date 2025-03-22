@@ -29,6 +29,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize mark as answered functionality
     initializeMarkAsAnswered();
     
+    // Initialize real-time updates
+    initializeRealtimeUpdates();
+    
+    // Initialize notification sound toggle
+    initializeNotificationSoundToggle();
+    
     // Comment toggle and sorting functionality
     // Toggle comments visibility
     document.querySelectorAll('.comments-toggle').forEach(toggle => {
@@ -335,66 +341,72 @@ function handleAIResponse(e) {
     bootstrapModal.show();
 }
 
-// Handle AI response form submission
+// Handle AI Response Form Submission
 function handleAIResponseForm(e) {
     e.preventDefault();
-    
     const form = e.currentTarget;
     const contentType = form.querySelector('#ai-response-content-type').value;
     const contentId = form.querySelector('#ai-response-content-id').value;
     const personalityId = form.querySelector('#ai-response-personality').value;
     
-    // Disable the submit button and show loading
+    // Show loading state
     const submitButton = form.querySelector('button[type="submit"]');
-    const originalButtonText = submitButton.textContent;
+    const originalButtonText = submitButton.innerHTML;
     submitButton.disabled = true;
-    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
     
-    // Send the request to the server
+    // Check if the question is marked as answered
+    const questionAnsweredElement = document.querySelector('meta[name="question-answered"]');
+    if (questionAnsweredElement && questionAnsweredElement.getAttribute('content') === 'true') {
+        showNotification('error', 'This question is marked as answered. AI responses are disabled.');
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalButtonText;
+        $('#ai-response-modal').modal('hide');
+        return;
+    }
+    
+    // Send the request to the API
     fetch('/api/ai/respond', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
             'X-CSRFToken': getCsrfToken()
         },
         body: JSON.stringify({
             content_type: contentType,
             content_id: contentId,
             personality_id: personalityId
-        }),
-        credentials: 'same-origin'
+        })
     })
     .then(response => {
         if (!response.ok) {
-            throw new Error('Network response was not ok');
+            return response.json().then(data => {
+                throw new Error(data.error || 'Failed to generate AI response');
+            });
         }
         return response.json();
     })
     .then(data => {
-        if (data.success) {
-            // Hide the modal
-            const modal = document.getElementById('ai-responder-modal');
-            const bootstrapModal = bootstrap.Modal.getInstance(modal);
-            bootstrapModal.hide();
-            
-            // Add the AI response to the page
-            addAIResponseToPage(contentType, contentId, data.response);
-            
-            // Display a success message
-            showNotification('success', 'AI response generated successfully!');
-        } else {
-            showNotification('error', data.error || 'Failed to generate AI response');
+        // Reset the form and close the modal
+        form.reset();
+        $('#ai-response-modal').modal('hide');
+        
+        // Show success notification
+        showNotification('success', 'AI response generated successfully');
+        
+        // If we're not using SSE for real-time updates, manually add the comment to the page
+        if (!window.EventSource) {
+            addNewCommentToPage(data.response);
         }
     })
     .catch(error => {
         console.error('Error generating AI response:', error);
-        showNotification('error', 'Failed to generate AI response');
+        showNotification('error', error.message);
     })
     .finally(() => {
-        // Re-enable the submit button
+        // Reset button state
         submitButton.disabled = false;
-        submitButton.textContent = originalButtonText;
+        submitButton.innerHTML = originalButtonText;
     });
 }
 
@@ -1013,4 +1025,292 @@ function initializeMarkAsAnswered() {
             });
         });
     });
+}
+
+// Initialize real-time updates for comments using Server-Sent Events (SSE)
+function initializeRealtimeUpdates() {
+    // Check if we're on a question page
+    const questionIdElement = document.querySelector('meta[name="question-id"]');
+    if (!questionIdElement) {
+        console.log('No question ID found, skipping real-time updates');
+        return;
+    }
+    
+    const questionId = questionIdElement.getAttribute('content');
+    if (!questionId) {
+        console.log('Empty question ID, skipping real-time updates');
+        return;
+    }
+    
+    console.log(`Setting up real-time updates for question ID: ${questionId}`);
+    
+    // Get the highest comment ID currently on the page
+    let highestCommentId = 0;
+    document.querySelectorAll('.comment').forEach(comment => {
+        const commentId = parseInt(comment.id.replace('comment-', ''));
+        if (commentId > highestCommentId) {
+            highestCommentId = commentId;
+        }
+    });
+    
+    console.log(`Highest comment ID found: ${highestCommentId}`);
+    
+    // Create an EventSource for SSE
+    const eventSourceUrl = `/api/questions/${questionId}/stream?last_comment_id=${highestCommentId}`;
+    console.log(`Connecting to SSE endpoint: ${eventSourceUrl}`);
+    
+    const eventSource = new EventSource(eventSourceUrl);
+    
+    // Handle incoming events
+    eventSource.onmessage = function(event) {
+        console.log('SSE message received:', event.data);
+        
+        const data = JSON.parse(event.data);
+        
+        // Ignore heartbeat events
+        if (data.heartbeat) {
+            console.log('Heartbeat received');
+            return;
+        }
+        
+        // Handle new comments
+        if (data.comments && data.comments.length > 0) {
+            console.log(`Received ${data.comments.length} new comments`);
+            data.comments.forEach(comment => {
+                console.log('Adding new comment to page:', comment);
+                addNewCommentToPage(comment);
+            });
+        }
+    };
+    
+    eventSource.onopen = function() {
+        console.log('SSE connection opened');
+    };
+    
+    eventSource.onerror = function(error) {
+        console.error('SSE connection error:', error);
+        eventSource.close();
+        
+        // Try to reconnect after a delay
+        setTimeout(() => {
+            console.log('Attempting to reconnect SSE...');
+            initializeRealtimeUpdates();
+        }, 5000);
+    };
+    
+    // Close the connection when the page is unloaded
+    window.addEventListener('beforeunload', () => {
+        console.log('Closing SSE connection due to page unload');
+        eventSource.close();
+    });
+}
+
+// Add a new comment to the page
+function addNewCommentToPage(comment) {
+    console.log(`Processing new comment ID: ${comment.id}`);
+    
+    // Check if the comment already exists
+    if (document.getElementById(`comment-${comment.id}`)) {
+        console.log(`Comment ID ${comment.id} already exists on the page, skipping`);
+        return;
+    }
+    
+    // Check if the question is marked as answered
+    const questionAnsweredElement = document.querySelector('meta[name="question-answered"]');
+    if (questionAnsweredElement && questionAnsweredElement.getAttribute('content') === 'true') {
+        console.log('Question is marked as answered, not adding new AI comments');
+        // If this is an AI comment and the question is answered, don't add it
+        if (comment.author && comment.author.is_ai) {
+            return;
+        }
+    }
+    
+    if (comment.parent_comment_id) {
+        // This is a reply to another comment
+        const parentComment = document.getElementById(`comment-${comment.parent_comment_id}`);
+        if (parentComment) {
+            console.log(`Found parent comment ${comment.parent_comment_id}, adding as reply`);
+            
+            // Get or create the replies container
+            let repliesContainer = parentComment.querySelector('.comment-replies');
+            if (!repliesContainer) {
+                repliesContainer = document.createElement('div');
+                repliesContainer.className = 'comment-replies';
+                parentComment.appendChild(repliesContainer);
+            }
+            
+            // Create the comment element
+            const commentElement = document.createElement('div');
+            commentElement.className = 'comment';
+            commentElement.id = `comment-${comment.id}`;
+            commentElement.dataset.score = comment.score;
+            commentElement.dataset.created = comment.created_at;
+            
+            // Determine the nesting level
+            const parentLevelMatch = parentComment.className.match(/comment-level-(\d+)/);
+            const parentLevel = parentLevelMatch ? parseInt(parentLevelMatch[1]) : 0;
+            commentElement.classList.add(`comment-level-${parentLevel + 1}`);
+            
+            // Set the HTML content
+            commentElement.innerHTML = `
+                <div class="comment-thread-line"></div>
+                <div class="comment-content">
+                    <div class="comment-text">
+                        ${comment.html_content}
+                    </div>
+                    <div class="comment-meta">
+                        <div class="comment-vote me-2">
+                            <button class="vote-button" data-vote-type="up" data-comment-id="${comment.id}">
+                                <i class="fa-solid fa-arrow-up"></i>
+                            </button>
+                            <span class="vote-count">${comment.score}</span>
+                            <button class="vote-button" data-vote-type="down" data-comment-id="${comment.id}">
+                                <i class="fa-solid fa-arrow-down"></i>
+                            </button>
+                        </div>
+                        <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
+                        ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                        <span class="text-muted">just now</span>
+                        <button class="btn btn-sm btn-link reply-button" data-comment-id="${comment.id}">
+                            <i class="fa-solid fa-reply"></i> Reply
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Add the comment to the replies container
+            repliesContainer.appendChild(commentElement);
+            
+            // Initialize vote buttons for the new comment
+            const voteButtons = commentElement.querySelectorAll('.vote-button');
+            voteButtons.forEach(button => {
+                button.addEventListener('click', handleVote);
+            });
+            
+            // Initialize reply button
+            const replyButton = commentElement.querySelector('.reply-button');
+            if (replyButton) {
+                replyButton.addEventListener('click', function() {
+                    showReplyForm(comment.id);
+                });
+            }
+            
+            // Play a notification sound if available
+            playNotificationSound();
+        } else {
+            console.log(`Parent comment ${comment.parent_comment_id} not found, cannot add reply`);
+        }
+    } else {
+        // This is a top-level comment (answer to the question)
+        const commentsContainer = document.querySelector('.thread-container');
+        if (commentsContainer) {
+            console.log('Adding as top-level comment');
+            
+            // Create the comment element
+            const commentElement = document.createElement('div');
+            commentElement.className = 'comment comment-level-0';
+            commentElement.id = `comment-${comment.id}`;
+            commentElement.dataset.score = comment.score;
+            commentElement.dataset.created = comment.created_at;
+            
+            // Set the HTML content
+            commentElement.innerHTML = `
+                <div class="comment-content">
+                    <div class="comment-text">
+                        ${comment.html_content}
+                    </div>
+                    <div class="comment-meta">
+                        <div class="comment-vote me-2">
+                            <button class="vote-button" data-vote-type="up" data-comment-id="${comment.id}">
+                                <i class="fa-solid fa-arrow-up"></i>
+                            </button>
+                            <span class="vote-count">${comment.score}</span>
+                            <button class="vote-button" data-vote-type="down" data-comment-id="${comment.id}">
+                                <i class="fa-solid fa-arrow-down"></i>
+                            </button>
+                        </div>
+                        <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
+                        ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                        <span class="text-muted">just now</span>
+                        <button class="btn btn-sm btn-link reply-button" data-comment-id="${comment.id}">
+                            <i class="fa-solid fa-reply"></i> Reply
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Add the comment to the comments container
+            commentsContainer.appendChild(commentElement);
+            
+            // Initialize vote buttons for the new comment
+            const voteButtons = commentElement.querySelectorAll('.vote-button');
+            voteButtons.forEach(button => {
+                button.addEventListener('click', handleVote);
+            });
+            
+            // Initialize reply button
+            const replyButton = commentElement.querySelector('.reply-button');
+            if (replyButton) {
+                replyButton.addEventListener('click', function() {
+                    showReplyForm(comment.id);
+                });
+            }
+            
+            // Play a notification sound if available
+            playNotificationSound();
+        } else {
+            console.log('Comments container not found, cannot add top-level comment');
+        }
+    }
+    
+    // Show a notification for the new comment
+    showNotification('info', `New comment from ${comment.author.username}`);
+}
+
+// Initialize the notification sound toggle
+function initializeNotificationSoundToggle() {
+    const toggle = document.getElementById('notification-sound-toggle');
+    if (toggle) {
+        // Check if there's a saved preference
+        const soundEnabled = localStorage.getItem('notification-sound-enabled');
+        if (soundEnabled !== null) {
+            toggle.checked = soundEnabled === 'true';
+        }
+        
+        // Save preference when changed
+        toggle.addEventListener('change', function() {
+            localStorage.setItem('notification-sound-enabled', toggle.checked);
+            
+            // Update the icon based on the toggle state
+            const icon = toggle.nextElementSibling.querySelector('i');
+            if (icon) {
+                if (toggle.checked) {
+                    icon.className = 'fa-solid fa-volume-high';
+                } else {
+                    icon.className = 'fa-solid fa-volume-xmark';
+                }
+            }
+        });
+        
+        // Initialize the icon based on the saved preference
+        const icon = toggle.nextElementSibling.querySelector('i');
+        if (icon && soundEnabled !== null) {
+            if (toggle.checked) {
+                icon.className = 'fa-solid fa-volume-high';
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark';
+            }
+        }
+    }
+}
+
+// Function to play notification sound if enabled
+function playNotificationSound() {
+    const toggle = document.getElementById('notification-sound-toggle');
+    if (toggle && toggle.checked) {
+        const notificationSound = document.getElementById('notification-sound');
+        if (notificationSound) {
+            notificationSound.play().catch(e => console.log('Could not play notification sound', e));
+        }
+    }
 }
