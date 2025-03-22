@@ -190,9 +190,22 @@
                                 <h4>Prompt Template</h4>
                             </div>
                             <div class="card-body">
+                                <div class="mb-3 form-check">
+                                    {{ form.use_custom_prompt(class="form-check-input") }}
+                                    <label for="use_custom_prompt" class="form-check-label">{{ form.use_custom_prompt.label }}</label>
+                                    <small class="form-text text-muted d-block">
+                                        When enabled, this personality will use its own prompt template instead of the standard one.
+                                    </small>
+                                </div>
+                                
                                 <div class="mb-3">
                                     <label for="prompt_template" class="form-label">{{ form.prompt_template.label }}</label>
-                                    {{ form.prompt_template(class="form-control", rows=8) }}
+                                    {{ form.prompt_template(class="form-control", rows=10) }}
+                                    <small class="form-text text-muted">
+                                        Available variables: {{name}}, {{description}}, {{expertise}}, {{personality_traits}}, 
+                                        {{interaction_style}}, {{helpfulness_level}}, {{strictness_level}}, {{verbosity_level}}, 
+                                        {{content}}, {{context}}
+                                    </small>
                                     {% if form.prompt_template.errors %}
                                         <div class="text-danger">
                                             {% for error in form.prompt_template.errors %}
@@ -200,9 +213,37 @@
                                             {% endfor %}
                                         </div>
                                     {% endif %}
-                                    <div class="form-text">
-                                        Use variables like {{name}}, {{expertise}}, {{personality_traits}}, {{content}}, etc. in your template.
-                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>LLM Configuration</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="custom_api_key" class="form-label">{{ form.custom_api_key.label }}</label>
+                                    {{ form.custom_api_key(class="form-control") }}
+                                    <small class="form-text text-muted">
+                                        Optional. Leave blank to use the system default API key.
+                                    </small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="custom_base_url" class="form-label">{{ form.custom_base_url.label }}</label>
+                                    {{ form.custom_base_url(class="form-control") }}
+                                    <small class="form-text text-muted">
+                                        Optional. Leave blank to use the system default base URL.
+                                    </small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="custom_model" class="form-label">{{ form.custom_model.label }}</label>
+                                    {{ form.custom_model(class="form-control") }}
+                                    <small class="form-text text-muted">
+                                        Optional. Leave blank to use the system default model.
+                                    </small>
                                 </div>
                             </div>
                         </div>

@@ -33,5 +33,28 @@
             </form>
         </div>
     </div>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="h5 mb-0">Standard AI Prompt Template</h2>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.settings') }}">
+                {{ form.csrf_token }}
+                <div class="form-group mb-3">
+                    <label for="ai_standard_prompt_template">Standard Prompt Template</label>
+                    {{ form.ai_standard_prompt_template(class="form-control", rows=15) }}
+                    <small class="form-text text-muted">
+                        This template will be used for all AI personalities unless they have "Use Custom Prompt" enabled.<br>
+                        Available variables: {{name}}, {{description}}, {{expertise}}, {{personality_traits}}, 
+                        {{interaction_style}}, {{helpfulness_level}}, {{strictness_level}}, {{verbosity_level}}, 
+                        {{content}}, {{context}}
+                    </small>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Save Template</button>
+            </form>
+        </div>
+    </div>
 </div>
 {% endblock %}

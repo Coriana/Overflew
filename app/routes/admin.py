@@ -100,8 +100,8 @@ def ai_personalities():
 def new_ai_personality():
     """Create a new AI personality"""
     from flask_wtf import FlaskForm
-    from wtforms import StringField, TextAreaField, IntegerField, SubmitField
-    from wtforms.validators import DataRequired, Length, NumberRange
+    from wtforms import StringField, TextAreaField, IntegerField, SubmitField, BooleanField
+    from wtforms.validators import DataRequired, Length, NumberRange, Optional
     
     # Define the form for creating AI personalities
     class AIPersonalityForm(FlaskForm):
@@ -114,12 +114,28 @@ def new_ai_personality():
         strictness_level = IntegerField('Strictness Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
         verbosity_level = IntegerField('Verbosity Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
         activity_frequency = IntegerField('Activity Frequency (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
+        use_custom_prompt = BooleanField('Use Custom Prompt Template')
         prompt_template = TextAreaField('Prompt Template', validators=[DataRequired()])
+        custom_api_key = StringField('Custom API Key', validators=[Optional(), Length(max=256)])
+        custom_base_url = StringField('Custom Base URL', validators=[Optional(), Length(max=256)])
+        custom_model = StringField('Custom Model', validators=[Optional(), Length(max=128)])
         ai_username = StringField('AI Username', validators=[DataRequired(), Length(min=2, max=100)])
         ai_email = StringField('AI Email', validators=[DataRequired(), Length(min=5, max=120)])
         submit = SubmitField('Create AI Personality')
     
     form = AIPersonalityForm()
+    
+    # Pre-fill with default values from environment
+    if request.method == 'GET':
+        import os
+        form.custom_base_url.data = os.environ.get('OPENAI_BASE_URL', '')
+        form.custom_model.data = os.environ.get('OPENAI_MODEL', '')
+        
+        # Get the standard prompt template for reference
+        from app.models.site_settings import SiteSettings
+        standard_template = SiteSettings.get('ai_standard_prompt_template', '')
+        if standard_template and not form.prompt_template.data:
+            form.prompt_template.data = standard_template
     
     if form.validate_on_submit():
         # Create new AI personality
@@ -133,7 +149,11 @@ def new_ai_personality():
             strictness_level=form.strictness_level.data,
             verbosity_level=form.verbosity_level.data,
             activity_frequency=form.activity_frequency.data / 10.0,
-            prompt_template=form.prompt_template.data
+            use_custom_prompt=form.use_custom_prompt.data,
+            prompt_template=form.prompt_template.data,
+            custom_api_key=form.custom_api_key.data if form.custom_api_key.data else None,
+            custom_base_url=form.custom_base_url.data if form.custom_base_url.data else None,
+            custom_model=form.custom_model.data if form.custom_model.data else None
         )
         
         db.session.add(ai_personality)
@@ -164,8 +184,8 @@ def edit_ai_personality(personality_id):
     ai_personality = AIPersonality.query.get_or_404(personality_id)
     
     from flask_wtf import FlaskForm
-    from wtforms import StringField, TextAreaField, IntegerField, SubmitField
-    from wtforms.validators import DataRequired, Length, NumberRange
+    from wtforms import StringField, TextAreaField, IntegerField, SubmitField, BooleanField
+    from wtforms.validators import DataRequired, Length, NumberRange, Optional
     
     # Define the form for editing AI personalities
     class AIPersonalityForm(FlaskForm):
@@ -178,10 +198,17 @@ def edit_ai_personality(personality_id):
         strictness_level = IntegerField('Strictness Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
         verbosity_level = IntegerField('Verbosity Level (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
         activity_frequency = IntegerField('Activity Frequency (1-10)', validators=[DataRequired(), NumberRange(min=1, max=10)])
+        use_custom_prompt = BooleanField('Use Custom Prompt Template')
         prompt_template = TextAreaField('Prompt Template', validators=[DataRequired()])
+        custom_api_key = StringField('Custom API Key', validators=[Optional(), Length(max=256)])
+        custom_base_url = StringField('Custom Base URL', validators=[Optional(), Length(max=256)])
+        custom_model = StringField('Custom Model', validators=[Optional(), Length(max=128)])
         ai_username = StringField('AI Username', validators=[DataRequired(), Length(min=2, max=100)])
         ai_email = StringField('AI Email', validators=[DataRequired(), Length(min=5, max=120)])
         submit = SubmitField('Update AI Personality')
+    
+    # Find the associated AI user
+    ai_user = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).first()
     
     # Create form and populate with existing data
     form = AIPersonalityForm(obj=ai_personality)
@@ -190,6 +217,11 @@ def edit_ai_personality(personality_id):
     if isinstance(ai_personality.activity_frequency, float):
         form.activity_frequency.data = int(ai_personality.activity_frequency * 10)
     
+    # Populate AI user fields if available
+    if ai_user:
+        form.ai_username.data = ai_user.username
+        form.ai_email.data = ai_user.email
+    
     # If form is submitted and valid
     if form.validate_on_submit():
         # Update AI personality with form data
@@ -197,6 +229,20 @@ def edit_ai_personality(personality_id):
         
         # Convert activity_frequency back to decimal (0-1 range)
         ai_personality.activity_frequency = form.activity_frequency.data / 10.0
+        
+        # Update or create AI user
+        if ai_user:
+            ai_user.username = form.ai_username.data
+            ai_user.email = form.ai_email.data
+        else:
+            ai_user = User(
+                username=form.ai_username.data,
+                email=form.ai_email.data,
+                is_ai=True,
+                ai_personality_id=ai_personality.id
+            )
+            ai_user.set_password("AIUSER")
+            db.session.add(ai_user)
         
         try:
             db.session.commit()
@@ -854,10 +900,11 @@ def populate_thread(question_id):
 def settings():
     from app.models.site_settings import SiteSettings
     from flask_wtf import FlaskForm
+    from wtforms import TextAreaField
     
-    # Create a simple form for CSRF protection
+    # Create a form for CSRF protection and standard prompt template
     class SettingsForm(FlaskForm):
-        pass
+        ai_standard_prompt_template = TextAreaField('Standard AI Prompt Template')
         
     form = SettingsForm()
     
@@ -875,6 +922,11 @@ def settings():
                         request.form.get('ai_auto_populate_personalities', '7'),
                         'Number of AI personalities to involve per question')
         
+        # Update standard prompt template
+        SiteSettings.set('ai_standard_prompt_template',
+                        form.ai_standard_prompt_template.data,
+                        'Default template for AI personality prompts')
+        
         flash('Settings updated successfully', 'success')
         return redirect(url_for('admin.settings'))
     
@@ -884,5 +936,8 @@ def settings():
         'ai_auto_populate_max_comments': SiteSettings.get('ai_auto_populate_max_comments', 150),
         'ai_auto_populate_personalities': SiteSettings.get('ai_auto_populate_personalities', 7)
     }
+    
+    # Set the standard prompt template in the form
+    form.ai_standard_prompt_template.data = SiteSettings.get('ai_standard_prompt_template', '')
     
     return render_template('admin/settings.html', settings=settings, form=form)

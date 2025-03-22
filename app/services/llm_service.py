@@ -28,7 +28,7 @@ worker_lock = threading.Lock()
 # List to store worker threads
 workers = []
 
-def get_completion(prompt, max_tokens=4096, model=None):
+def get_completion(prompt, max_tokens=4096, model=None, api_key=None, base_url=None):
     """
     Get a completion from the LLM
     
@@ -36,6 +36,8 @@ def get_completion(prompt, max_tokens=4096, model=None):
         prompt (str): The prompt to send to the LLM
         max_tokens (int): Maximum number of tokens to generate
         model (str): The model to use (defaults to environment variable or fallback)
+        api_key (str): Optional custom API key
+        base_url (str): Optional custom base URL
         
     Returns:
         str: The LLM's response text
@@ -47,7 +49,16 @@ def get_completion(prompt, max_tokens=4096, model=None):
         # Log the request to help debug
         current_app.logger.info(f"Sending request to LLM with model {model_name}")
         
-        # Make API call using the OpenAI v0.28.0 API format
+        # Configure client with custom or default settings
+        client_api_key = api_key or os.environ.get('OPENAI_API_KEY')
+        client_base_url = base_url or os.environ.get('OPENAI_BASE_URL')
+        
+        # Set up the client configuration
+        openai.api_key = client_api_key
+        if client_base_url:
+            openai.api_base = client_base_url
+        
+        # Make API call using the OpenAI API format
         response = openai.Completion.create(
             model=model_name,
             prompt=prompt,

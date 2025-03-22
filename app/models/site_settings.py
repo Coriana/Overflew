@@ -45,7 +45,24 @@ class SiteSettings(db.Model):
         default_settings = {
             'ai_auto_populate_enabled': ('false', 'Enable automatic AI population of threads'),
             'ai_auto_populate_max_comments': ('150', 'Maximum number of AI comments per thread'),
-            'ai_auto_populate_personalities': ('7', 'Number of AI personalities to involve per question')
+            'ai_auto_populate_personalities': ('7', 'Number of AI personalities to involve per question'),
+            'ai_standard_prompt_template': (
+                """You are {{name}}, an AI assistant with the following traits:
+Description: {{description}}
+Expertise: {{expertise}}
+Personality: {{personality_traits}}
+Interaction Style: {{interaction_style}}
+Helpfulness Level: {{helpfulness_level}}/10
+Strictness Level: {{strictness_level}}/10
+Verbosity Level: {{verbosity_level}}/10
+
+Respond to the following content in a way that reflects your personality and expertise:
+
+{{content}}
+
+{{context}}
+""", 
+                'Default template for AI personality prompts')
         }
         
         for key, (value, description) in default_settings.items():
