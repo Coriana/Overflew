@@ -608,15 +608,6 @@ def ai_respond_to_vote(vote):
             print(f"Content not found for vote {vote.id}")
             return None
         
-        # Check whether to respond based on vote type
-        vote_type = vote.vote_type
-        response_chance = 0.1 if vote_type == 1 else 0.3
-        
-        import random
-        # if random.random() > response_chance:
-        #     print(f"AI decided not to respond to this vote")
-        #     return None  # AI decides not to respond
-        
         # Get AI personalities that are likely to respond
         personalities = AIPersonality.query.filter_by(is_active=True).all()
         
@@ -671,10 +662,34 @@ def ai_respond_to_vote(vote):
         if content_type == "question":
             question = content
             
-            if vote_type == 1:
-                content_text = f"The following question received an upvote:\n\n{question.title}\n\n{question.body}\n\nAs {personality.name}, provide an insightful answer to this question."
+            # First, determine if the AI would upvote or downvote this content
+            vote_prompt = f"""
+            As {personality.name}, you're reviewing this question:
+            
+            TITLE: {question.title}
+            CONTENT: {question.body}
+            
+            Would you upvote or downvote this question? Consider the quality, clarity, and usefulness of the question.
+            Respond with either "UPVOTE" or "DOWNVOTE" followed by a brief explanation of your reasoning.
+            """
+            
+            # Get vote decision from LLM
+            from app.services.llm_service import get_completion
+            vote_decision = get_completion(vote_prompt, max_tokens=200)
+            
+            # Extract vote type from response
+            vote_type = 1  # Default to upvote
+            if vote_decision and "DOWNVOTE" in vote_decision.upper():
+                vote_type = -1
+                print(f"AI decided to downvote the question: {vote_decision}")
             else:
-                content_text = f"The following question received a downvote:\n\n{question.title}\n\n{question.body}\n\nAs {personality.name}, help improve this question by answering what might be unclear or providing a better approach."
+                print(f"AI decided to upvote the question: {vote_decision}")
+            
+            # Now create the response prompt based on the AI's vote decision
+            if vote_type == 1:
+                content_text = f"The following question is well-written and deserves an upvote:\n\n{question.title}\n\n{question.body}\n\nAs {personality.name}, provide an insightful answer to this question."
+            else:
+                content_text = f"The following question could be improved:\n\n{question.title}\n\n{question.body}\n\nAs {personality.name}, help improve this question by answering what might be unclear or providing a better approach."
             
             target_id = question_id
         elif content_type == "comment":
@@ -711,11 +726,36 @@ def ai_respond_to_vote(vote):
             
             context_text += "CONVERSATION HISTORY:\n" + "\n\n".join(comment_chain)
             
+            # First, determine if the AI would upvote or downvote this comment
+            vote_prompt = f"""
+            As {personality.name}, you're reviewing this comment:
+            
+            COMMENT: {comment.body}
+            
+            CONTEXT:
+            {context_text}
+            
+            Would you upvote or downvote this comment? Consider the quality, accuracy, and helpfulness of the comment.
+            Respond with either "UPVOTE" or "DOWNVOTE" followed by a brief explanation of your reasoning.
+            """
+            
+            # Get vote decision from LLM
+            from app.services.llm_service import get_completion
+            vote_decision = get_completion(vote_prompt, max_tokens=200)
+            
+            # Extract vote type from response
+            vote_type = 1  # Default to upvote
+            if vote_decision and "DOWNVOTE" in vote_decision.upper():
+                vote_type = -1
+                print(f"AI decided to downvote the comment: {vote_decision}")
+            else:
+                print(f"AI decided to upvote the comment: {vote_decision}")
+            
             # Get the prompt based on vote type
             if vote_type == 1:
-                content_text = f"The following comment received an upvote:\n{comment.body}\n\nAs {personality.name}, add to this well-received comment with additional insights or support."
+                content_text = f"The following comment deserves an upvote:\n{comment.body}\n\nAs {personality.name}, add to this well-received comment with additional insights or support."
             else:
-                content_text = f"The following comment received a downvote:\n{comment.body}\n\nAs {personality.name}, provide a balanced perspective or clarify potential misconceptions in this comment."
+                content_text = f"The following comment could be improved:\n{comment.body}\n\nAs {personality.name}, provide a balanced perspective or clarify potential misconceptions in this comment."
             
             target_id = comment_id
         
@@ -737,7 +777,6 @@ def ai_respond_to_vote(vote):
         print("=" * 40)
         
         # Get completion from LLM service
-        from app.services.llm_service import get_completion
         response = get_completion(formatted_prompt)
         
         if not response:
@@ -776,9 +815,41 @@ def ai_respond_to_vote(vote):
             result = reply
             print(f"Added AI reply to comment {comment_id}")
         
+        # Also add the AI's vote to the content
+        try:
+            # Check if the AI has already voted on this content
+            existing_vote = None
+            if content_type == "question":
+                existing_vote = Vote.query.filter_by(
+                    user_id=ai_user.id,
+                    question_id=question_id
+                ).first()
+            elif content_type == "comment":
+                existing_vote = Vote.query.filter_by(
+                    user_id=ai_user.id,
+                    comment_id=comment_id
+                ).first()
+            
+            # If no existing vote, create a new one
+            if not existing_vote:
+                ai_vote = Vote(
+                    user_id=ai_user.id,
+                    vote_type=vote_type,
+                    question_id=question_id if content_type == "question" else None,
+                    comment_id=comment_id if content_type == "comment" else None
+                )
+                db.session.add(ai_vote)
+                print(f"Added AI {vote_type} vote to {content_type} {target_id}")
+            elif existing_vote.vote_type != vote_type:
+                # Update the existing vote if it's different
+                existing_vote.vote_type = vote_type
+                print(f"Updated AI vote to {vote_type} for {content_type} {target_id}")
+        except Exception as e:
+            print(f"Error adding AI vote: {str(e)}")
+        
         try:
             db.session.commit()
-            print(f"Successfully saved AI response")
+            print(f"Successfully saved AI response and vote")
             return result
         except Exception as e:
             db.session.rollback()
@@ -1024,7 +1095,7 @@ def auto_populate_thread(question_id):
             )
             
             if ai_response:
-                print(f"Added AI answer from {ai_user.username} to question {question.id}")
+                print(f"Added AI answer to question {question.id}")
                 return True
             return False
         
@@ -1108,9 +1179,8 @@ def auto_populate_thread(question_id):
                         parent_comment_id=parent_comment.id
                     )
                     db.session.add(reply)
-                    db.session.commit()
+                    print(f"Added AI reply to {content_type} {parent_comment.id}")
                 
-                print(f"Added AI reply from {ai_user.username} to {content_type} {parent_comment.id}")
                 return True
             except Exception as e:
                 db.session.rollback()
@@ -1154,14 +1224,56 @@ def auto_populate_thread(question_id):
                 if comments_count >= max_comments:
                     break
                     
-                # 90% chance to upvote a random comment and possibly reply
+                # Get the AI personality
+                personality = AIPersonality.query.get(ai_user.ai_personality_id)
+                if not personality:
+                    print(f"No personality found for AI user {ai_user.username}")
+                    continue
+                
+                # 90% chance to evaluate a random comment
                 if random.random() < 0.9:
-                    # Try to find a comment not by this AI to upvote
+                    # Try to find a comment not by this AI to evaluate
                     for _ in range(min(10, len(all_comments))):
                         target = random.choice(all_comments)
                         # Don't vote on your own comments
                         if target.user_id != ai_user.id:
-                            # Create upvote
+                            # Determine if this is a question or comment
+                            content_type = "answer" if isinstance(target, Answer) else "comment"
+                            
+                            # Build context for evaluation
+                            context_text = f"QUESTION: {question.title}\n\n{question.body}\n\n"
+                            
+                            # Add tags if available 
+                            if question.tags:
+                                tags_str = ", ".join([tag.tag.name for tag in question.tags])
+                                context_text += f"TAGS: {tags_str}\n\n"
+                            
+                            # Create the vote evaluation prompt
+                            vote_prompt = f"""
+                            As {personality.name}, you're reviewing this {content_type}:
+                            
+                            {content_type.upper()}: {target.body}
+                            
+                            CONTEXT:
+                            {context_text}
+                            
+                            Would you upvote or downvote this {content_type}? Consider the quality, accuracy, and helpfulness.
+                            Respond with either "UPVOTE" or "DOWNVOTE" followed by a brief explanation of your reasoning.
+                            """
+                            
+                            # Get vote decision from LLM
+                            from app.services.llm_service import get_completion
+                            vote_decision = get_completion(vote_prompt, max_tokens=200)
+                            
+                            # Extract vote type from response
+                            vote_type = 1  # Default to upvote
+                            if vote_decision and "DOWNVOTE" in vote_decision.upper():
+                                vote_type = -1
+                                print(f"AI {ai_user.username} decided to downvote {content_type} {target.id}: {vote_decision}")
+                            else:
+                                print(f"AI {ai_user.username} decided to upvote {content_type} {target.id}: {vote_decision}")
+                            
+                            # Create or update vote
                             vote = Vote.query.filter_by(
                                 user_id=ai_user.id,
                                 question_id=None if isinstance(target, Comment) else target.id,
@@ -1173,67 +1285,35 @@ def auto_populate_thread(question_id):
                                     user_id=ai_user.id,
                                     question_id=None if isinstance(target, Comment) else target.id,
                                     comment_id=target.id if isinstance(target, Comment) else None,
-                                    vote_type=1  # upvote
+                                    vote_type=vote_type
                                 )
                                 db.session.add(vote)
-                                try:
-                                    db.session.commit()
-                                    print(f"Added upvote from {ai_user.username} to {'answer' if isinstance(target, Answer) else 'comment'} {target.id}")
-                                    
-                                    # 70% chance to reply to upvoted comment
-                                    if random.random() < 0.7:
-                                        _create_ai_reply(ai_user, target)
-                                        comments_count += 1
-                                    
-                                    break  # Found a comment to upvote
-                                except Exception as e:
-                                    db.session.rollback()
-                                    print(f"Error adding upvote: {str(e)}")
-                # 10% chance to downvote a random comment
-                else:
-                    # Try to find a comment not by this AI to downvote
-                    for _ in range(min(10, len(all_comments))):
-                        target = random.choice(all_comments)
-                        # Don't vote on your own comments
-                        if target.user_id != ai_user.id:
-                            # Create downvote
-                            vote = Vote.query.filter_by(
-                                user_id=ai_user.id,
-                                question_id=None if isinstance(target, Comment) else target.id,
-                                comment_id=target.id if isinstance(target, Comment) else None
-                            ).first()
-                            
-                            if not vote:
-                                vote = Vote(
-                                    user_id=ai_user.id,
-                                    question_id=None if isinstance(target, Comment) else target.id,
-                                    comment_id=target.id if isinstance(target, Comment) else None,
-                                    vote_type=-1  # downvote
-                                )
-                                db.session.add(vote)
-                                try:
-                                    db.session.commit()
-                                    print(f"Added downvote from {ai_user.username} to {'answer' if isinstance(target, Answer) else 'comment'} {target.id}")
-                                    
-                                    # 90% chance to reply to downvoted comment
-                                    if random.random() < 0.9:
-                                        _create_ai_reply(ai_user, target)
-                                        comments_count += 1
-                                    
-                                    break  # Found a comment to downvote
-                                except Exception as e:
-                                    db.session.rollback()
-                                    print(f"Error adding downvote: {str(e)}")
+                            else:
+                                vote.vote_type = vote_type
+                                
+                            try:
+                                db.session.commit()
+                                print(f"Added {vote_type} vote from {ai_user.username} to {content_type} {target.id}")
+                                
+                                # 70% chance to reply to the evaluated comment
+                                if random.random() < 0.7:
+                                    _create_ai_reply(ai_user, target)
+                                    comments_count += 1
+                                
+                                break  # Found a comment to evaluate
+                            except Exception as e:
+                                db.session.rollback()
+                                print(f"Error adding vote: {str(e)}")
+        
+        # Check if the question has been marked as answered since the task started
+        db.session.refresh(question)
+        if question.is_answered:
+            print(f"Question {question.id} has been marked as answered during auto-population, stopping")
+            return
             
-            # Check if the question has been marked as answered since the task started
-            db.session.refresh(question)
-            if question.is_answered:
-                print(f"Question {question.id} has been marked as answered during auto-population, stopping")
-                return
-            
-            # Pause between iterations to avoid overloading the server
-            import time
-            time.sleep(2)
+        # Pause between iterations to avoid overloading the server
+        import time
+        time.sleep(2)
         
         print(f"Auto-population complete for question {question_id} with {comments_count} comments/answers")
     except Exception as e:
