@@ -16,6 +16,7 @@ class Question(db.Model):
     is_closed = db.Column(db.Boolean, default=False)
     close_reason = db.Column(db.String(120))
     is_deleted = db.Column(db.Boolean, default=False)
+    is_answered = db.Column(db.Boolean, default=False)
 
     # Relationships
     # Note: No user relationship here as it's defined in the User model with backref='author'

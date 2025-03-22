@@ -60,7 +60,7 @@ def ask():
         # Get AI personalities that are active
         personalities = AIPersonality.query.filter_by(is_active=True).all()
         
-        # If no active personalities found, check for any personalities
+        # If no active ones, use any
         if not personalities:
             personalities = AIPersonality.query.all()
             print(f"No active AI personalities found, using any available ({len(personalities)} found)")
@@ -105,11 +105,13 @@ def ask():
         # Use flask.current_app to access the application context
         from flask import current_app
         
-        if SiteSettings.get('ai_auto_populate_enabled', False):
+        if SiteSettings.get('ai_auto_populate_enabled', False) and not question.is_answered:
             print(f"Auto-population is enabled, populating thread for question {question.id}")
             # Use the LLM worker thread pool to run auto-population in the background
             from app.services.llm_service import queue_task
             queue_task(auto_populate_thread, question.id, parallel=True)
+        elif question.is_answered:
+            print(f"Question {question.id} is marked as answered, skipping auto-population")
         
         flash('Your question has been posted.', 'success')
         return redirect(url_for('questions.view', question_id=question.id))
@@ -315,6 +317,48 @@ def add_comment(question_id):
     return redirect(url_for('questions.view', question_id=question_id))
 
 
+@questions_bp.route('/<int:question_id>/mark_answered', methods=['POST'])
+@login_required
+def mark_answered(question_id):
+    """Mark a question as answered"""
+    question = Question.query.get_or_404(question_id)
+    
+    # Check if user is authorized to mark as answered (author or admin)
+    if current_user.id != question.user_id and not current_user.is_admin:
+        flash('You are not authorized to mark this question as answered.', 'danger')
+        return redirect(url_for('questions.view', question_id=question_id))
+    
+    question.is_answered = True
+    db.session.commit()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'message': 'Question marked as answered'})
+    
+    flash('Question marked as answered.', 'success')
+    return redirect(url_for('questions.view', question_id=question_id))
+
+
+@questions_bp.route('/<int:question_id>/mark_unanswered', methods=['POST'])
+@login_required
+def mark_unanswered(question_id):
+    """Unmark a question as answered"""
+    question = Question.query.get_or_404(question_id)
+    
+    # Check if user is authorized to unmark as answered (author or admin)
+    if current_user.id != question.user_id and not current_user.is_admin:
+        flash('You are not authorized to unmark this question as answered.', 'danger')
+        return redirect(url_for('questions.view', question_id=question_id))
+    
+    question.is_answered = False
+    db.session.commit()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'message': 'Question unmarked as answered'})
+    
+    flash('Question unmarked as answered.', 'success')
+    return redirect(url_for('questions.view', question_id=question_id))
+
+
 def _generate_ai_answer(prompt, ai_user_id=None, ai_personality_id=None, 
                        question_id=None, comment_id=None, answer_id=None):
     """
@@ -335,7 +379,7 @@ def _generate_ai_answer(prompt, ai_user_id=None, ai_personality_id=None,
             print(f"Personality template: {personality.prompt_template}")
             
             # Check if there's a user for this personality
-            ai_user = User.query.filter_by(ai_personality_id=personality.id).first()
+            ai_user = User.query.filter_by(username=personality.name).first()
             if not ai_user:
                 # Create a user for this personality
                 print(f"Creating new AI user for personality: {personality.name}")
@@ -381,7 +425,7 @@ def _generate_ai_answer(prompt, ai_user_id=None, ai_personality_id=None,
             print(f"Personality template: {personality.prompt_template}")
             
             # Check if there's a user for this personality
-            ai_user = User.query.filter_by(ai_personality_id=personality.id).first()
+            ai_user = User.query.filter_by(username=personality.name).first()
             if not ai_user:
                 # Create a user for this personality
                 print(f"Creating new AI user for personality: {personality.name}")
@@ -896,6 +940,11 @@ def auto_populate_thread(question_id):
         question = Question.query.get(question_id)
         if not question:
             print(f"Question {question_id} not found, skipping auto-population")
+            return
+        
+        # Skip auto-population if the question is marked as answered
+        if question.is_answered:
+            print(f"Question {question_id} is marked as answered, skipping auto-population")
             return
         
         # Get active AI personalities

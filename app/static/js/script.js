@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize AI response functionality
     initializeAIResponders();
     
+    // Initialize mark as answered functionality
+    initializeMarkAsAnswered();
+    
     // Comment toggle and sorting functionality
     // Toggle comments visibility
     document.querySelectorAll('.comments-toggle').forEach(toggle => {
@@ -923,4 +926,91 @@ function loadContinuedThreadContent(parentId) {
             console.error('Error loading thread comments:', error);
             contentContainer.innerHTML = '<div class="alert alert-danger">Error loading comments</div>';
         });
+}
+
+// Initialize mark as answered functionality
+function initializeMarkAsAnswered() {
+    // Handle marking a question as answered
+    document.querySelectorAll('.mark-answered-link').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            if (!isUserAuthenticated()) {
+                showNotification('error', 'You must be logged in to mark a question as answered');
+                return;
+            }
+            
+            const questionId = this.getAttribute('data-question-id');
+            
+            // Send request to server
+            fetch(`/questions/${questionId}/mark_answered`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken()
+                },
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Reload the page to show the question as answered
+                    window.location.reload();
+                } else {
+                    showNotification('error', data.message || 'Failed to mark question as answered');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('error', 'An error occurred while marking question as answered');
+            });
+        });
+    });
+
+    // Handle unmarking a question as answered
+    document.querySelectorAll('.mark-unanswered-link').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            if (!isUserAuthenticated()) {
+                showNotification('error', 'You must be logged in to unmark a question as answered');
+                return;
+            }
+            
+            const questionId = this.getAttribute('data-question-id');
+            
+            // Send request to server
+            fetch(`/questions/${questionId}/mark_unanswered`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken()
+                },
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Reload the page to show the question as not answered
+                    window.location.reload();
+                } else {
+                    showNotification('error', data.message || 'Failed to unmark question as answered');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('error', 'An error occurred while unmarking question as answered');
+            });
+        });
+    });
 }

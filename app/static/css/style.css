@@ -299,6 +299,27 @@ body {
     padding: 0;
 }
 
+/* Answered question styling */
+.badge.bg-success {
+    font-size: 0.75rem;
+    padding: 0.35em 0.65em;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+}
+
+.question-title .badge.bg-success {
+    font-weight: normal;
+}
+
+.question-header .badge.bg-success {
+    font-size: 1rem;
+}
+
+/* Add a subtle visual indicator to answered questions in listing */
+.question-summary:has(.badge.bg-success) {
+    border-left: 3px solid #198754;
+}
+
 /* Forms */
 .form-container {
     max-width: 800px;

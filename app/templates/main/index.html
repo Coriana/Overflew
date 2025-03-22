@@ -40,6 +40,9 @@
                     <div class="question-content">
                         <h3 class="question-title">
                             <a href="{{ url_for('questions.view', question_id=question.id) }}">{{ question.title }}</a>
+                            {% if question.is_answered %}
+                            <span class="badge bg-success">Answered</span>
+                            {% endif %}
                         </h3>
                         <div class="question-excerpt">
                             {{ question.body_html|safe|truncate(200) }}
