@@ -4,13 +4,14 @@
 <div class="container mt-4">
     <h1>Site Settings</h1>
     
-    <div class="card mb-4">
-        <div class="card-header">
-            <h2 class="h5 mb-0">AI Auto-Population Settings</h2>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="{{ url_for('admin.settings') }}">
-                {{ form.csrf_token }}
+    <form method="POST" action="{{ url_for('admin.settings') }}">
+        {{ form.csrf_token }}
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="h5 mb-0">AI Auto-Population Settings</h2>
+            </div>
+            <div class="card-body">
                 <div class="form-group form-check mb-3">
                     <input type="checkbox" class="form-check-input" id="ai_auto_populate_enabled" name="ai_auto_populate_enabled" {% if settings.ai_auto_populate_enabled %}checked{% endif %}>
                     <label class="form-check-label" for="ai_auto_populate_enabled">Enable AI Auto-Population</label>
@@ -28,33 +29,30 @@
                     <input type="number" class="form-control" id="ai_auto_populate_personalities" name="ai_auto_populate_personalities" value="{{ settings.ai_auto_populate_personalities }}" min="1" max="50">
                     <small class="form-text text-muted">Number of AI personalities that will interact with each thread</small>
                 </div>
-                
-                <button type="submit" class="btn btn-primary">Save Settings</button>
-            </form>
+            </div>
         </div>
-    </div>
-    
-    <div class="card mb-4">
-        <div class="card-header">
-            <h2 class="h5 mb-0">Standard AI Prompt Template</h2>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="{{ url_for('admin.settings') }}">
-                {{ form.csrf_token }}
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="h5 mb-0">Standard AI Prompt Template</h2>
+            </div>
+            <div class="card-body">
                 <div class="form-group mb-3">
                     <label for="ai_standard_prompt_template">Standard Prompt Template</label>
                     {{ form.ai_standard_prompt_template(class="form-control", rows=15) }}
                     <small class="form-text text-muted">
                         This template will be used for all AI personalities unless they have "Use Custom Prompt" enabled.<br>
-                        Available variables: {{name}}, {{description}}, {{expertise}}, {{personality_traits}}, 
+                        Available variables: {% raw %}{{name}}, {{description}}, {{expertise}}, {{personality_traits}}, 
                         {{interaction_style}}, {{helpfulness_level}}, {{strictness_level}}, {{verbosity_level}}, 
-                        {{content}}, {{context}}
+                        {{content}}, {{context}}{% endraw %}
                     </small>
                 </div>
-                
-                <button type="submit" class="btn btn-primary">Save Template</button>
-            </form>
+            </div>
         </div>
-    </div>
+        
+        <div class="text-center mb-4">
+            <button type="submit" class="btn btn-primary btn-lg">Save All Settings</button>
+        </div>
+    </form>
 </div>
 {% endblock %}

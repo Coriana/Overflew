@@ -909,7 +909,9 @@ def settings():
     form = SettingsForm()
     
     if request.method == 'POST' and form.validate_on_submit():
-        # Update settings
+        # Update all settings at once
+        
+        # Auto-population settings
         SiteSettings.set('ai_auto_populate_enabled', 
                         request.form.get('ai_auto_populate_enabled') == 'on',
                         'Enable/disable automatic AI thread population')
@@ -922,12 +924,12 @@ def settings():
                         request.form.get('ai_auto_populate_personalities', '7'),
                         'Number of AI personalities to involve per question')
         
-        # Update standard prompt template
+        # Standard prompt template
         SiteSettings.set('ai_standard_prompt_template',
                         form.ai_standard_prompt_template.data,
                         'Default template for AI personality prompts')
         
-        flash('Settings updated successfully', 'success')
+        flash('All settings updated successfully', 'success')
         return redirect(url_for('admin.settings'))
     
     # Get current settings with defaults

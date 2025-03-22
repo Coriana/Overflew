@@ -484,9 +484,9 @@ def ai_respond_to_vote(vote):
         content = None
         content_type = None
         
-        if vote.answer_id:
-            content = Answer.query.get(vote.answer_id)
-            content_type = "answer"
+        if vote.question_id:
+            content = Question.query.get(vote.question_id)
+            content_type = "question"
         elif vote.comment_id:
             content = Comment.query.get(vote.comment_id)
             content_type = "comment"
@@ -498,7 +498,9 @@ def ai_respond_to_vote(vote):
             return None
             
         # Skip if the content was created by the voter (self-vote)
-        if content.user_id == vote.user_id:
+        if content_type == "question" and content.user_id == vote.user_id:
+            return None
+        elif content_type == "comment" and content.user_id == vote.user_id:
             return None
             
         # Get the AI personality of the content creator
@@ -511,9 +513,8 @@ def ai_respond_to_vote(vote):
             return None
             
         # Get the question for context
-        question = None
-        if content_type == "answer":
-            question = Question.query.get(content.question_id)
+        if content_type == "question":
+            question = content
         elif content_type == "comment":
             question = Question.query.get(content.question_id)
             
@@ -527,26 +528,26 @@ def ai_respond_to_vote(vote):
             context += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
             
         # Determine if this is an upvote or downvote
-        vote_type = "upvote" if vote.value > 0 else "downvote"
+        vote_type = "upvote" if vote.vote_type > 0 else "downvote"
         
         # Create the prompt based on content type and vote type
-        if content_type == "answer":
+        if content_type == "question":
             prompt = f"""
             You are {ai_personality.name}, an AI with the following traits:
             - Expertise: {ai_personality.expertise}
             - Personality: {ai_personality.personality_traits}
             - Interaction Style: {ai_personality.interaction_style}
             
-            A user has {vote_type}d your answer to a question. Please respond to this {vote_type} in a way that reflects your personality.
+            A user has {vote_type}d your question. Please respond to this {vote_type} in a way that reflects your personality.
             
             {context}
             
-            Your answer that was {vote_type}d: {content.body}
+            Your question that was {vote_type}d: {content.title}
             
-            Respond to this {vote_type} in a conversational way. If it's an upvote, express gratitude and perhaps expand on your answer.
-            If it's a downvote, be gracious and ask how you could improve your answer or provide better information.
+            Respond to this {vote_type} in a conversational way. If it's an upvote, express gratitude and perhaps expand on your question.
+            If it's a downvote, be gracious and ask how you could improve your question or provide better information.
             """
-        else:  # comment
+        elif content_type == "comment":
             prompt = f"""
             You are {ai_personality.name}, an AI with the following traits:
             - Expertise: {ai_personality.expertise}
@@ -563,13 +564,24 @@ def ai_respond_to_vote(vote):
             If it's a downvote, be gracious and ask how you could improve your comment or provide better information.
             """
             
-        # Format the prompt with the AI personality
-        formatted_prompt = ai_personality.format_prompt(
-            content=prompt,
-            context=""
-        )
+        # Format the prompt using the personality's template
+        formatted_prompt = ai_personality.prompt_template
+        formatted_prompt = formatted_prompt.replace('{{content}}', prompt)
+        formatted_prompt = formatted_prompt.replace('{{context}}', context)
         
-        # Get completion from LLM with custom settings if available
+        # For any other template variables, use personality attributes
+        formatted_prompt = formatted_prompt.replace('{{name}}', ai_personality.name)
+        formatted_prompt = formatted_prompt.replace('{{description}}', ai_personality.description)
+        formatted_prompt = formatted_prompt.replace('{{expertise}}', ai_personality.expertise)
+        formatted_prompt = formatted_prompt.replace('{{personality_traits}}', ai_personality.personality_traits)
+        
+        # Log the actual prompt sent to the model
+        print("FINAL PROMPT FOR AI COMMENT RESPONSE:")
+        print("=" * 40)
+        print(formatted_prompt)
+        print("=" * 40)
+        
+        # Get completion from LLM service
         response = get_completion(
             prompt=formatted_prompt,
             model=ai_personality.custom_model,
@@ -578,14 +590,14 @@ def ai_respond_to_vote(vote):
         )
         
         # Create the reply
-        if content_type == "answer":
+        if content_type == "question":
             reply = Comment(
                 body=response,
                 user_id=ai_user.id,
                 question_id=question.id,
-                answer_id=content.id
+                parent_comment_id=None
             )
-        else:  # comment
+        elif content_type == "comment":
             reply = Comment(
                 body=response,
                 user_id=ai_user.id,
@@ -948,12 +960,12 @@ def auto_populate_thread(question_id, max_comments=None, num_personalities=None)
                     
                     # Update or create the vote
                     if existing_vote:
-                        existing_vote.value = vote_direction
+                        existing_vote.vote_type = vote_direction
                     else:
                         # Create a new vote
                         vote = Vote(
                             user_id=ai_user.id,
-                            value=vote_direction
+                            vote_type=vote_direction
                         )
                         
                         if item['type'] == 'answer':
@@ -973,7 +985,7 @@ def auto_populate_thread(question_id, max_comments=None, num_personalities=None)
                             - Personality: {personality.personality_traits}
                             - Interaction Style: {personality.interaction_style}
                             
-                            You just upvoted the following {item['type']} because you found it valuable. 
+                            You just upvoted the following {item['type']}. 
                             Write a reply that expands on the {item['type']}, adds additional information, 
                             or supports the points made. Be constructive and helpful.
                             
