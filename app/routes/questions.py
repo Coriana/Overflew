@@ -429,7 +429,7 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
         context = f"Question Title: {question.title}\n"
         context += f"Question Body: {question.body}\n"
         if question.tags:
-            context += f"Tags: {', '.join([tag.name for tag in question.tags])}\n"
+            context += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
         
         # Format the prompt with the AI personality
         prompt = ai_personality.format_prompt(
@@ -449,8 +449,7 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
         answer = Answer(
             body=answer_text,
             question_id=question.id,
-            user_id=ai_user.id,
-            is_ai_generated=True
+            user_id=ai_user.id
         )
         
         db.session.add(answer)
@@ -524,7 +523,7 @@ def ai_respond_to_vote(vote):
         context = f"Question Title: {question.title}\n"
         context += f"Question Body: {question.body}\n"
         if question.tags:
-            context += f"Tags: {', '.join([tag.name for tag in question.tags])}\n"
+            context += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
             
         # Determine if this is an upvote or downvote
         vote_type = "upvote" if vote.value > 0 else "downvote"
@@ -666,8 +665,7 @@ def ai_respond_to_comment(comment_id):
                 helpfulness_level=8,
                 strictness_level=5,
                 verbosity_level=7,
-                prompt_template="You are a helpful AI assistant providing information on {{content}}",
-                is_active=True
+                prompt_template="You are {{name}}, an AI with expertise in {{expertise}} and traits: {{personality_traits}}. Please respond to: {{content}}"
             )
             db.session.add(default_personality)
             db.session.commit()
@@ -696,6 +694,11 @@ def ai_respond_to_comment(comment_id):
         content_text = ""
         context_text = f"Question: {question.title}\n\n{question.body}"
         
+        # Add tags to context if available
+        if question.tags:
+            context_text += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
+        
+        # Determine if this is a top-level comment or a reply
         if comment.parent_comment_id is None:
             # This is an answer (top-level comment) to a question
             content_text = f"User's answer: {comment.body}\n\nAs {personality.name}, continue the discussion by providing additional insights, clarifications, or a different perspective on this answer."
@@ -816,7 +819,7 @@ def auto_populate_thread(question_id, max_comments=None, num_personalities=None)
         context = f"Question Title: {question.title}\n"
         context += f"Question Body: {question.body}\n"
         if question.tags:
-            context += f"Tags: {', '.join([tag.name for tag in question.tags])}\n"
+            context += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
         
         # Get all comments and answers to evaluate and possibly respond to
         items_to_evaluate = []

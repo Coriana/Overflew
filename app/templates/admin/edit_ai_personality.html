@@ -202,9 +202,9 @@
                                     <label for="prompt_template" class="form-label">{{ form.prompt_template.label }}</label>
                                     {{ form.prompt_template(class="form-control", rows=10) }}
                                     <small class="form-text text-muted">
-                                        Available variables: {{name}}, {{description}}, {{expertise}}, {{personality_traits}}, 
-                                        {{interaction_style}}, {{helpfulness_level}}, {{strictness_level}}, {{verbosity_level}}, 
-                                        {{content}}, {{context}}
+                                        Available variables: {% raw %}{{name}}{% endraw %}, {% raw %}{{description}}{% endraw %}, {% raw %}{{expertise}}{% endraw %}, {% raw %}{{personality_traits}}{% endraw %}, 
+                                        {% raw %}{{interaction_style}}{% endraw %}, {% raw %}{{helpfulness_level}}{% endraw %}, {% raw %}{{strictness_level}}{% endraw %}, {% raw %}{{verbosity_level}}{% endraw %}, 
+                                        {% raw %}{{content}}{% endraw %}, {% raw %}{{context}}{% endraw %}
                                     </small>
                                     {% if form.prompt_template.errors %}
                                         <div class="text-danger">
