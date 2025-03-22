@@ -999,6 +999,12 @@ def auto_populate_thread(question_id):
         
         # Function to create initial AI answers
         def _create_ai_answer(ai_user, question):
+            # Check if the question has been marked as answered since the task started
+            db.session.refresh(question)
+            if question.is_answered:
+                print(f"Question {question.id} has been marked as answered during auto-population, skipping AI answer")
+                return False
+                
             print(f"Creating AI answer from {ai_user.username} for question {question.id}")
             
             # Generate AI response
@@ -1016,6 +1022,13 @@ def auto_populate_thread(question_id):
         
         # Function to create AI replies to comments
         def _create_ai_reply(ai_user, parent_comment, context=""):
+            # Check if the question has been marked as answered since the task started
+            db.session.refresh(Question.query.get(parent_comment.question_id))
+            question = Question.query.get(parent_comment.question_id)
+            if question and question.is_answered:
+                print(f"Question {question.id} has been marked as answered during auto-population, skipping AI reply")
+                return False
+                
             # Don't reply to yourself
             if parent_comment.user_id == ai_user.id:
                 return False
@@ -1100,10 +1113,15 @@ def auto_populate_thread(question_id):
                 print(f"Error creating AI reply: {str(e)}")
                 return False
         
-        # Create initial answers from some AI personalities
-        initial_answer_count = min(num_personalities // 2, 3)  # At most 3 initial answers
-        for i in range(initial_answer_count):
-            _create_ai_answer(ai_users[i], question)
+        # First, create initial answers from some AI personalities
+        for ai_user in random.sample(ai_users, min(3, len(ai_users))):
+            # Check if the question has been marked as answered since the task started
+            db.session.refresh(question)
+            if question.is_answered:
+                print(f"Question {question.id} has been marked as answered during auto-population, stopping")
+                return
+                
+            _create_ai_answer(ai_user, question)
         
         # Get all comments and answers in the thread
         comments_count = 0
@@ -1203,6 +1221,12 @@ def auto_populate_thread(question_id):
                                     db.session.rollback()
                                     print(f"Error adding downvote: {str(e)}")
             
+            # Check if the question has been marked as answered since the task started
+            db.session.refresh(question)
+            if question.is_answered:
+                print(f"Question {question.id} has been marked as answered during auto-population, stopping")
+                return
+            
             # Pause between iterations to avoid overloading the server
             import time
             time.sleep(2)
@@ -1214,6 +1238,12 @@ def auto_populate_thread(question_id):
 
 def _create_ai_answer(ai_user, question):
     """Helper function to create an AI answer to a question"""
+    # Check if the question has been marked as answered since the task started
+    db.session.refresh(question)
+    if question.is_answered:
+        print(f"Question {question.id} has been marked as answered during auto-population, skipping AI answer")
+        return None
+        
     # Get the AI personality
     personality = AIPersonality.query.get(ai_user.ai_personality_id)
     if not personality:
@@ -1263,6 +1293,13 @@ def _create_ai_answer(ai_user, question):
 
 def _create_ai_reply(ai_user, comment):
     """Helper function to create an AI reply to a comment"""
+    # Check if the question has been marked as answered since the task started
+    db.session.refresh(Question.query.get(comment.question_id))
+    question = Question.query.get(comment.question_id)
+    if question and question.is_answered:
+        print(f"Question {question.id} has been marked as answered during auto-population, skipping AI reply")
+        return None
+        
     # Get the AI personality
     personality = AIPersonality.query.get(ai_user.ai_personality_id)
     if not personality:
