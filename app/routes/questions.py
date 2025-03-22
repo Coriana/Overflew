@@ -618,8 +618,35 @@ def ai_respond_to_vote(vote):
             comment = content
             question = Question.query.get(comment.question_id)
             
-            # Add question as context
-            context_text = f"Question: {question.title}\n{question.body}"
+            # Build comprehensive context with question details and comment thread
+            context_text = f"QUESTION: {question.title}\n\n{question.body}\n\n"
+            
+            # Add tags if available 
+            if question.tags:
+                tags_str = ", ".join([tag.tag.name for tag in question.tags])
+                context_text += f"TAGS: {tags_str}\n\n"
+            
+            # Build the comment chain to trace the full conversation
+            comment_chain = []
+            current = comment
+            
+            # Traverse up the comment tree to collect all parents
+            while current:
+                author = User.query.get(current.user_id)
+                author_name = author.username if author else "Unknown User"
+                is_ai = " (AI)" if author and author.is_ai else ""
+                
+                comment_chain.append(f"COMMENT by {author_name}{is_ai}: {current.body}")
+                
+                if hasattr(current, 'parent_comment_id') and current.parent_comment_id:
+                    current = Comment.query.get(current.parent_comment_id)
+                else:
+                    break
+            
+            # Reverse to get chronological order (oldest first)
+            comment_chain.reverse()
+            
+            context_text += "CONVERSATION HISTORY:\n" + "\n\n".join(comment_chain)
             
             # Get the prompt based on vote type
             if vote_type == 1:
@@ -955,9 +982,42 @@ def auto_populate_thread(question_id):
                 ai_personality = AIPersonality.query.get(ai_user.ai_personality_id)
                 
                 if ai_personality:
-                    # Generate context
+                    # Build comprehensive context including all parent comments and thread history
                     if not context:
-                        context = f"Thread context: {question.title}\n\n{question.body}\n\nComment: {content}"
+                        # Start with the question
+                        context = f"QUESTION: {question.title}\n\n{question.body}\n\n"
+                        
+                        # Add thread hierarchy (all parent comments)
+                        comment_chain = []
+                        current = parent_comment
+                        
+                        # Traverse up the comment tree to collect all parents
+                        while current:
+                            if isinstance(current, Comment):
+                                author = User.query.get(current.user_id)
+                                author_name = author.username if author else "Unknown User"
+                                is_ai = " (AI)" if author and author.is_ai else ""
+                                
+                                comment_chain.append(f"COMMENT by {author_name}{is_ai}: {current.body}")
+                                
+                                if current.parent_comment_id:
+                                    current = Comment.query.get(current.parent_comment_id)
+                                else:
+                                    current = None
+                            else:
+                                # If it's an Answer object
+                                author = User.query.get(current.user_id)
+                                author_name = author.username if author else "Unknown User"
+                                is_ai = " (AI)" if author and author.is_ai else ""
+                                
+                                comment_chain.append(f"ANSWER by {author_name}{is_ai}: {current.body}")
+                                current = None
+                        
+                        # Reverse the chain to get chronological order (oldest first)
+                        comment_chain.reverse()
+                        
+                        # Add the comment chain to the context
+                        context += "CONVERSATION HISTORY:\n" + "\n\n".join(comment_chain)
                     
                     # Generate response using personality template
                     prompt = ai_personality.format_prompt(content, context)

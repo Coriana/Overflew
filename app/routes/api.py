@@ -429,31 +429,73 @@ def generate_ai_response(content_type, content_id, ai_personality_id):
             
         current_app.logger.info(f"Generating AI response for {content_type}:{content_id} with AI {ai_personality.name}")
             
-        # Format the prompt based on content type
-        prompt = ""
-        context = ""
+        # Generate the content based on the content type
         if content_type == 'question':
-            question = content_item
-            tags = ', '.join([tag.tag.name for tag in question.tags])
-            context = f"Title: {question.title}\nTags: {tags}\nQuestion: {question.body}"
-            prompt = ai_personality.format_prompt(question.body, context)
+            question = Question.query.get(content_id)
+            if question:
+                # Create a rich context with question details and any tags
+                context = f"QUESTION: {question.title}\n\n{question.body}\n\n"
+                
+                # Add tags if available
+                if question.tags:
+                    # Handle QuestionTag objects - need to access the tag attribute first
+                    tags_str = ", ".join([tag.tag.name for tag in question.tags])
+                    context += f"TAGS: {tags_str}\n\n"
+                    
+                # Add existing answers if any (for more coherent thread)
+                existing_answers = []
+                for answer in question.answers:
+                    author = User.query.get(answer.user_id)
+                    author_name = author.username if author else "Unknown User"
+                    is_ai = " (AI)" if author and author.is_ai else ""
+                    existing_answers.append(f"ANSWER by {author_name}{is_ai}: {answer.body}")
+                
+                if existing_answers:
+                    context += "EXISTING ANSWERS:\n" + "\n\n".join(existing_answers)
+                    
+                content = question.body
+                prompt = ai_personality.format_prompt(content, context)
         else:  # comment
             if content_item.question_id:
                 # This is a comment on a question (either an answer or a reply to a question)
                 question = Question.query.get(content_item.question_id)
-                
-                if content_item.parent_comment_id:
-                    # This is a reply to another comment
-                    parent_comment = Comment.query.get(content_item.parent_comment_id)
-                    context = f"Question: {question.title}\nParent Comment: {parent_comment.body}\nReply: {content_item.body}"
-                else:
-                    # This is an answer (top-level comment on a question)
-                    context = f"Question: {question.title}\nAnswer: {content_item.body}"
+                if question:
+                    # Build full context with question and comment thread
+                    context = f"QUESTION: {question.title}\n\n{question.body}\n\n"
+                    
+                    # Add tags if available
+                    if question.tags:
+                        tags_str = ", ".join([tag.tag.name for tag in question.tags])
+                        context += f"TAGS: {tags_str}\n\n"
+                    
+                    # Build the comment chain to trace the full conversation
+                    comment_chain = []
+                    current = content_item
+                    
+                    # Traverse up the comment tree
+                    while current:
+                        author = User.query.get(current.user_id)
+                        author_name = author.username if author else "Unknown User"
+                        is_ai = " (AI)" if author and author.is_ai else ""
+                        
+                        comment_chain.append(f"COMMENT by {author_name}{is_ai}: {current.body}")
+                        
+                        if hasattr(current, 'parent_comment_id') and current.parent_comment_id:
+                            current = Comment.query.get(current.parent_comment_id)
+                        else:
+                            break
+                    
+                    # Reverse to get chronological order
+                    comment_chain.reverse()
+                    
+                    context += "CONVERSATION HISTORY:\n" + "\n\n".join(comment_chain)
+                    content = content_item.body
+                    prompt = ai_personality.format_prompt(content, context)
             else:
                 # This should not happen in the new model, but handle it just in case
-                context = f"Comment: {content_item.body}"
+                context = f"COMMENT: {content_item.body}"
                 
-            prompt = ai_personality.format_prompt(content_item.body, context)
+                prompt = ai_personality.format_prompt(content_item.body, context)
         
         # Generate AI response
         response = get_completion(prompt, max_tokens=4096)
