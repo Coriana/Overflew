@@ -63,9 +63,6 @@
                             <div class="d-flex align-items-center">
                                 <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="user-image me-2">
                                 <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username }}</a>
-                                {% if user.is_ai %}
-                                    <span class="ai-badge ms-1">AI</span>
-                                {% endif %}
                                 {% if user.is_admin %}
                                     <span class="badge bg-danger ms-1">Admin</span>
                                 {% endif %}
@@ -73,12 +70,10 @@
                         </td>
                         <td>{{ user.email }}</td>
                         <td>
-                            {% if user.is_ai %}
-                                <span class="badge bg-info">AI</span>
-                            {% elif user.is_admin %}
+                            {% if user.is_admin %}
                                 <span class="badge bg-danger">Admin</span>
                             {% else %}
-                                <span class="badge bg-primary">Human</span>
+                                <span class="badge bg-primary">User</span>
                             {% endif %}
                         </td>
                         <td>{{ user.reputation }}</td>
@@ -90,11 +85,9 @@
                                 <a href="{{ url_for('auth.profile', username=user.username) }}" class="btn btn-outline-primary">
                                     <i class="fa-solid fa-eye"></i>
                                 </a>
-                                {% if not user.is_ai %}
-                                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#toggleAdminModal" data-user-id="{{ user.id }}" data-user-name="{{ user.username }}" data-is-admin="{{ user.is_admin }}">
-                                        <i class="fa-solid fa-user-shield"></i>
-                                    </button>
-                                {% endif %}
+                                <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#toggleAdminModal" data-user-id="{{ user.id }}" data-user-name="{{ user.username }}" data-is-admin="{{ user.is_admin }}">
+                                    <i class="fa-solid fa-user-shield"></i>
+                                </button>
                                 <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-user-id="{{ user.id }}" data-user-name="{{ user.username }}">
                                     <i class="fa-solid fa-trash"></i>
                                 </button>

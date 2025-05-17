@@ -1,0 +1,5 @@
+F:\\dev\\Git\\Overflew\promote_admin.py:8:1: F401 'os' imported but unused
+F:\\dev\\Git\\Overflew\promote_admin.py:16:1: W293 blank line contains whitespace
+F:\\dev\\Git\\Overflew\promote_admin.py:19:1: W293 blank line contains whitespace
+F:\\dev\\Git\\Overflew\promote_admin.py:22:1: W293 blank line contains whitespace
+F:\\dev\\Git\\Overflew\promote_admin.py:26:1: W293 blank line contains whitespace

@@ -15,8 +15,6 @@ class User(db.Model, UserMixin):
     about_me = db.Column(db.Text)
     profile_image = db.Column(db.String(256))
     is_admin = db.Column(db.Boolean, default=False)
-    is_ai = db.Column(db.Boolean, default=False)
-    ai_personality_id = db.Column(db.Integer, db.ForeignKey('ai_personalities.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_seen = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -25,7 +23,6 @@ class User(db.Model, UserMixin):
     answers = db.relationship('Answer', backref='author', lazy='dynamic')
     comments = db.relationship('Comment', backref='author', lazy='dynamic')
     votes = db.relationship('Vote', backref='user', lazy='dynamic')
-    ai_personality = db.relationship('AIPersonality', backref='users', lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

@@ -60,9 +60,6 @@
                                         <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                         <div>
                                             <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
-                                            {% if question.author.is_ai %}
-                                                <span class="ai-badge">AI</span>
-                                            {% endif %}
                                             <div class="text-muted small">
                                                 <span class="fw-bold">{{ question.author.reputation }}</span> reputation
                                             </div>
@@ -164,9 +161,6 @@
                                     <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="user-image me-2">
                                     <div>
                                         <a href="{{ url_for('auth.profile', username=user.username) }}" class="fw-bold">{{ user.username }}</a>
-                                        {% if user.is_ai %}
-                                            <span class="ai-badge">AI</span>
-                                        {% endif %}
                                         <div class="text-muted small">
                                             <span class="fw-bold">{{ user.reputation }}</span> reputation
                                         </div>
@@ -189,9 +183,8 @@
                 <h5 class="card-title mb-0">About Overflew</h5>
             </div>
             <div class="card-body">
-                <p>Overflew is a community-driven Q&A platform where human and AI developers come together to share knowledge and solve coding problems.</p>
-                <p>With over 15 AI-powered personalities contributing to discussions, you'll get diverse perspectives on your technical questions.</p>
-                <a href="{{ url_for('main.ai_community') }}" class="btn btn-outline-primary btn-sm">Meet our AI community</a>
+                <p>Overflew is a community-driven Q&A platform where developers come together to share knowledge and solve coding problems.</p>
+                <p>Join our community to get help with your technical questions and share your expertise with others.</p>
             </div>
         </div>
     </div>

@@ -61,9 +61,6 @@
                                     <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                     <div>
                                         <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
-                                        {% if question.author.is_ai %}
-                                            <span class="ai-badge">AI</span>
-                                        {% endif %}
                                         <div class="text-muted small">
                                             <span class="fw-bold">{{ question.author.reputation }}</span> reputation
                                         </div>
@@ -155,17 +152,6 @@
             </div>
         </div>
         
-        <!-- AI Personalities -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="card-title mb-0">AI Personalities</h5>
-            </div>
-            <div class="card-body">
-                <p class="card-text">Get answers from our specialized AI personalities.</p>
-                <a href="{{ url_for('main.ai_community') }}" class="btn btn-outline-primary btn-sm">Meet the AI Community</a>
-            </div>
-        </div>
-        
         <!-- Network Stats -->
         <div class="card">
             <div class="card-header">
@@ -185,10 +171,7 @@
                         Users
                         <span class="badge bg-primary rounded-pill">{{ stats.user_count }}</span>
                     </li>
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                        AI Personalities
-                        <span class="badge bg-primary rounded-pill">{{ stats.ai_count }}</span>
-                    </li>
+
                 </ul>
             </div>
         </div>

@@ -5,10 +5,6 @@ from app.models.question import Question
 from app.models.comment import Comment
 from app.models.vote import Vote
 from app.models.user import User
-from app.models.ai_personality import AIPersonality
-from app.services.llm_service import get_completion, queue_task
-import os
-import random
 from datetime import datetime
 
 # This blueprint is now just a legacy handler that redirects to the appropriate comment routes
@@ -37,9 +33,7 @@ def post(question_id):
     db.session.add(comment)
     db.session.commit()
     
-    # Trigger AI responses to the new comment
-    from app.routes.questions import ai_respond_to_comment
-    ai_respond_to_comment(comment.id)
+    # Comment posted successfully
     
     flash('Your answer has been posted', 'success')
     return redirect(url_for('questions.view', question_id=question_id))
@@ -180,10 +174,6 @@ def add_comment(answer_id):
     
     db.session.add(comment)
     db.session.commit()
-    
-    # Trigger AI responses to the comment asynchronously
-    from app.routes.questions import ai_respond_to_comment
-    ai_respond_to_comment(comment.id)
     
     flash('Your comment has been added', 'success')
     return redirect(url_for('questions.view', question_id=parent_comment.question_id))

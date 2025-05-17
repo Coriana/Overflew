@@ -7,7 +7,6 @@ from app.models.user import User
 from app.models.question import Question
 from app.models.comment import Comment
 from app.models.tag import Tag, QuestionTag
-from app.models.ai_personality import AIPersonality
 from app import db
 
 main_bp = Blueprint('main', __name__)
@@ -40,8 +39,7 @@ def index():
     stats = {
         'question_count': Question.query.count(),
         'answer_count': Comment.query.filter_by(parent_comment_id=None).count(),  # Top-level comments are answers
-        'user_count': User.query.count(),
-        'ai_count': User.query.filter_by(is_ai=True).count()
+        'user_count': User.query.count()
     }
     
     return render_template('main/index.html', 
@@ -309,8 +307,8 @@ def users():
     q = request.args.get('q', '')
     page = request.args.get('page', 1, type=int)
     
-    # Query to get users based on sort and search parameters
-    query = User.query.filter_by(is_ai=False)
+    # Query to get users
+    query = User.query
     
     # Apply search if provided
     if q:
@@ -333,72 +331,40 @@ def users():
     # Paginate the results
     users = query.paginate(page=page, per_page=20, error_out=False)
     
-    # Get top contributors for sidebar
-    top_contributors = User.query.filter_by(is_ai=False).order_by(
-        User.reputation.desc()
+    # Get top contributors (users with most answers and upvoted content)
+    from app.models.vote import Vote
+    
+    # Subquery to calculate total score for each comment
+    comment_scores = db.session.query(
+        Comment.id.label('comment_id'),
+        db.func.sum(Vote.vote_type).label('score')
+    ).outerjoin(
+        Vote, Comment.id == Vote.comment_id
+    ).group_by(
+        Comment.id
+    ).subquery()
+    
+    top_contributors = db.session.query(
+        User,
+        db.func.count(Comment.id).label('answer_count'),
+        db.func.coalesce(db.func.sum(comment_scores.c.score), 0).label('total_score')
+    ).join(
+        Comment, User.id == Comment.user_id
+    ).outerjoin(
+        comment_scores, Comment.id == comment_scores.c.comment_id
+    ).filter(
+        Comment.parent_comment_id.is_(None)  # Only count top-level answers
+    ).group_by(
+        User.id
+    ).order_by(
+        db.desc('answer_count'),
+        db.desc('total_score')
     ).limit(10).all()
     
-    # Get AI personalities for sidebar
-    ai_personalities = User.query.filter_by(is_ai=True).order_by(
-        User.reputation.desc()
-    ).limit(5).all()
+    # Set up pagination
+    pagination = users
     
     return render_template('main/users.html', 
                           users=users, 
                           pagination=users,
-                          top_contributors=top_contributors,
-                          ai_personalities=ai_personalities)
-
-
-@main_bp.route('/ai-community')
-@main_bp.route('/ai_community')  # Keep old route for backward compatibility
-def ai_community():
-    page = request.args.get('page', 1, type=int)
-    expertise = request.args.get('expertise', '')
-    knowledge_level = request.args.get('knowledge_level', '')
-    sort = request.args.get('sort', 'reputation')
-    
-    # Build query with AI users joined with their personalities
-    query = db.session.query(User, AIPersonality).join(
-        AIPersonality, User.ai_personality_id == AIPersonality.id
-    ).filter(User.is_ai == True)
-    
-    # Apply filters
-    if expertise:
-        query = query.filter(AIPersonality.expertise.ilike(f'%{expertise}%'))
-    
-    # Apply sorting
-    if sort == 'reputation':
-        query = query.order_by(User.reputation.desc())
-    elif sort == 'activity':
-        query = query.order_by(AIPersonality.activity_frequency.desc())
-    elif sort == 'newest':
-        query = query.order_by(User.created_at.desc())
-    
-    # Execute query and paginate
-    results = query.paginate(page=page, per_page=20, error_out=False)
-    
-    # Prepare data for template
-    ai_personalities = []
-    for user, personality in results.items:
-        # Get post count for this user using count() instead of length
-        comments_count = db.session.query(db.func.count(Comment.id)).filter(Comment.user_id == user.id).scalar() or 0
-        post_count = comments_count
-        
-        # Combine user and personality data
-        personality_data = {
-            'user': user,
-            'knowledge_level': 'Expert',  # Default, could be derived from helpfulness_level
-            'interaction_style': personality.interaction_style,
-            'expertise': personality.expertise,
-            'traits': personality.personality_traits,
-            'post_count': post_count
-        }
-        ai_personalities.append(personality_data)
-    
-    # Set up pagination
-    pagination = results
-    
-    return render_template('main/ai_community.html', 
-                          ai_personalities=ai_personalities,
-                          pagination=pagination)
+                          top_contributors=top_contributors)

@@ -116,9 +116,6 @@
                                         <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                         <div>
                                             <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
-                                            {% if question.author.is_ai %}
-                                                <span class="ai-badge">AI</span>
-                                            {% endif %}
                                             <div class="text-muted small">
                                                 <span class="fw-bold">{{ question.author.reputation }}</span> reputation
                                             </div>
@@ -162,9 +159,6 @@
                                         <img src="{{ answer.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ answer.author.username }}" alt="{{ answer.author.username }}" class="user-image me-2">
                                         <div>
                                             <a href="{{ url_for('auth.profile', username=answer.author.username) }}" class="fw-bold">{{ answer.author.username }}</a>
-                                            {% if answer.author.is_ai %}
-                                                <span class="ai-badge">AI</span>
-                                            {% endif %}
                                             <div class="text-muted small">
                                                 <span class="fw-bold">{{ answer.author.reputation }}</span> reputation
                                             </div>
@@ -188,9 +182,6 @@
                                         <div>
                                             <h5 class="card-title mb-0">
                                                 <a href="{{ url_for('auth.profile', username=user.username) }}">{{ user.username }}</a>
-                                                {% if user.is_ai %}
-                                                    <span class="ai-badge">AI</span>
-                                                {% endif %}
                                             </h5>
                                             <p class="card-text text-muted">
                                                 <span class="fw-bold">{{ user.reputation }}</span> reputation
@@ -381,12 +372,7 @@
                             </label>
                         </div>
                         
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="ai_answers" name="ai_answers" value="1">
-                            <label class="form-check-label" for="ai_answers">
-                                Has AI answers
-                            </label>
-                        </div>
+
                     </div>
                     
                     <button type="submit" class="btn btn-primary w-100">

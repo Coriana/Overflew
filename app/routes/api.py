@@ -1,22 +1,13 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 from flask_login import login_required, current_user
 from app import db
 from app.models.question import Question
-from app.models.answer import Answer
 from app.models.comment import Comment
 from app.models.user import User
 from app.models.vote import Vote
-from app.models.ai_personality import AIPersonality
-from app.services.llm_service import get_completion, queue_task
-import os
-import random
+import json
+import time
 from datetime import datetime
-
-# Configure OpenAI client
-# client = OpenAI(
-#     api_key=os.environ.get("OPENAI_API_KEY"),
-#     base_url=os.environ.get("OPENAI_BASE_URL"),
-# )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -70,7 +61,6 @@ def get_question(question_id):
         'author': {
             'id': question.author.id,
             'username': question.author.username,
-            'is_ai': question.author.is_ai,
             'profile_image': question.author.profile_image
         },
         'created_at': question.created_at.isoformat(),
@@ -87,7 +77,6 @@ def get_question(question_id):
                 'author': {
                     'id': comment.author.id,
                     'username': comment.author.username,
-                    'is_ai': comment.author.is_ai,
                     'profile_image': comment.author.profile_image
                 },
                 'created_at': comment.created_at.isoformat(),
@@ -101,7 +90,6 @@ def get_question(question_id):
                 'author': {
                     'id': answer.author.id,
                     'username': answer.author.username,
-                    'is_ai': answer.author.is_ai,
                     'profile_image': answer.author.profile_image
                 },
                 'created_at': answer.created_at.isoformat(),
@@ -115,7 +103,6 @@ def get_question(question_id):
                         'author': {
                             'id': comment.author.id,
                             'username': comment.author.username,
-                            'is_ai': comment.author.is_ai,
                             'profile_image': comment.author.profile_image
                         },
                         'created_at': comment.created_at.isoformat(),
@@ -223,17 +210,6 @@ def vote():
         db.session.rollback()
         return jsonify({'error': 'Failed to update vote'}), 500
     
-    # Trigger AI response if this is a real user (not an AI)
-    if not current_user.is_ai:
-        # Queue AI response to the vote in the background
-        from app.routes.questions import ai_respond_to_vote
-        
-        # Instead of creating a new vote, use the existing one if it's an update
-        # or the new one if it's a new vote
-        vote_to_process = existing_vote if existing_vote else new_vote
-            
-        ai_respond_to_vote(vote_to_process)
-    
     return jsonify({'success': True})
 
 
@@ -269,17 +245,12 @@ def add_comment():
     db.session.add(comment)
     db.session.commit()
     
-    # Trigger AI responses to the comment
-    from app.routes.comments import ai_respond_to_comment
-    queue_task(ai_respond_to_comment, comment.id, parallel=True)
-    
     result = {
         'id': comment.id,
         'body': comment.body,
         'author': {
             'id': comment.author.id,
             'username': comment.author.username,
-            'is_ai': comment.author.is_ai,
             'profile_image': comment.author.profile_image
         },
         'created_at': comment.created_at.isoformat(),
@@ -315,95 +286,6 @@ def accept_comment(comment_id):
     return jsonify({'success': True})
 
 
-@api_bp.route('/ai/respond', methods=['POST'])
-@login_required
-def ai_respond():
-    """API endpoint to generate an AI response to a question or comment"""
-    data = request.json
-    
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    
-    content_type = data.get('content_type')
-    content_id = data.get('content_id')
-    personality_id = data.get('personality_id')
-    
-    if not content_type or not content_id or not personality_id:
-        return jsonify({'error': 'Missing required parameters'}), 400
-    
-    # Validate content type
-    if content_type not in ['question', 'comment']:
-        return jsonify({'error': 'Invalid content type'}), 400
-    
-    # Get the content item
-    content_item = None
-    if content_type == 'question':
-        content_item = Question.query.get(content_id)
-    elif content_type == 'comment':
-        content_item = Comment.query.get(content_id)
-    
-    if not content_item:
-        return jsonify({'error': f'{content_type.capitalize()} not found'}), 404
-    
-    # Check if the question is marked as answered
-    question = None
-    if content_type == 'question':
-        question = content_item
-    elif content_type == 'comment':
-        question = Question.query.get(content_item.question_id)
-    
-    if question and question.is_answered:
-        return jsonify({'error': 'This question is marked as answered. AI responses are disabled.'}), 400
-    
-    # Get the AI personality
-    personality = AIPersonality.query.get(personality_id)
-    if not personality:
-        return jsonify({'error': 'AI Personality not found'}), 404
-    
-    # Get or create the AI user for this personality
-    ai_user = User.query.filter_by(username=personality.name).first()
-    if not ai_user:
-        print(f"Creating AI user for {personality.name}")
-        from werkzeug.security import generate_password_hash
-        ai_user = User(
-            username=personality.name,
-            email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
-            password_hash=generate_password_hash("AI_USER_PASSWORD"),
-            is_ai=True,
-            ai_personality_id=personality.id
-        )
-        db.session.add(ai_user)
-        db.session.commit()
-    
-    # Generate the AI response
-    if content_type == 'question':
-        # Generate a response to the question
-        from app.routes.questions import _create_ai_answer
-        response = _create_ai_answer(ai_user, content_item)
-    else:
-        # Generate a response to the comment
-        from app.routes.questions import _create_ai_reply
-        response = _create_ai_reply(ai_user, content_item)
-    
-    if response:
-        return jsonify({
-            'success': True,
-            'response': {
-                'id': response.id,
-                'body': response.body,
-                'html_content': response.html_content,
-                'author': {
-                    'username': ai_user.username,
-                    'is_ai': True
-                },
-                'created_at': response.created_at.isoformat(),
-                'score': 0
-            }
-        })
-    else:
-        return jsonify({'error': 'Failed to generate AI response'}), 500
-
-
 @api_bp.route('/comments/children/<int:parent_id>')
 def get_comment_children(parent_id):
     """
@@ -429,7 +311,17 @@ def get_comment_children(parent_id):
     comments_data = []
     for comment in child_comments:
         # Format each comment including replies
-        comment_data = format_comment_data(comment)
+        comment_data = {
+            'id': comment.id,
+            'body': comment.body,
+            'author': {
+                'id': comment.author.id,
+                'username': comment.author.username,
+                'profile_image': comment.author.profile_image
+            },
+            'created_at': comment.created_at.isoformat(),
+            'score': comment.score
+        }
         comments_data.append(comment_data)
     
     return jsonify({
@@ -457,54 +349,23 @@ def get_comment_thread(parent_id):
     comments_data = []
     for comment in child_comments:
         # Format each comment including replies
-        comment_data = format_comment_data(comment)
+        comment_data = {
+            'id': comment.id,
+            'body': comment.body,
+            'author': {
+                'id': comment.author.id,
+                'username': comment.author.username,
+                'profile_image': comment.author.profile_image
+            },
+            'created_at': comment.created_at.isoformat(),
+            'score': comment.score
+        }
         comments_data.append(comment_data)
     
     return jsonify({
         'success': True,
         'comments': comments_data
     })
-
-
-def format_comment_data(comment, include_replies=True, max_depth=2, current_depth=0):
-    """
-    Helper function to format a comment and its replies into a JSON-serializable format
-    """
-    # Get the user vote if authenticated
-    user_vote = 0
-    if current_user.is_authenticated:
-        vote = Vote.query.filter_by(user_id=current_user.id, comment_id=comment.id).first()
-        if vote:
-            user_vote = vote.vote_type
-    
-    # Format the base comment data
-    comment_data = {
-        'id': comment.id,
-        'body': comment.body,
-        'html_content': comment.html_content,
-        'author_id': comment.author_id,
-        'author_username': comment.author.username if comment.author else '[deleted]',
-        'author_is_ai': comment.author.is_ai if comment.author else False,
-        'score': comment.score,
-        'created_at': comment.created_at.isoformat(),
-        'is_deleted': comment.is_deleted,
-        'user_vote': user_vote,
-        'replies': []
-    }
-    
-    # Include replies recursively, but limit depth to avoid too much data
-    if include_replies and current_depth < max_depth:
-        replies = Comment.query.filter_by(parent_comment_id=comment.id).all()
-        for reply in replies:
-            reply_data = format_comment_data(
-                reply, 
-                include_replies=True,
-                max_depth=max_depth,
-                current_depth=current_depth + 1
-            )
-            comment_data['replies'].append(reply_data)
-    
-    return comment_data
 
 
 @api_bp.route('/comments/<int:comment_id>/delete', methods=['POST'])
@@ -532,317 +393,9 @@ def search_tags():
         return jsonify({'tags': []})
     
     tags = db.session.query(tag_model.Tag).filter(
-        tag_model.Tag.name.ilike(f'%{query}%')
-    ).limit(10).all()
+        tag_model.Tag.name.like(f'%{query}%')
+    ).all()
     
-    result = [{'id': tag.id, 'name': tag.name} for tag in tags]
-    
-    return jsonify({'tags': result})
-
-
-@api_bp.route('/ai_personalities')
-def ai_personalities():
-    """API endpoint to get all AI personalities"""
-    personalities = AIPersonality.query.all()
-    
-    result = [
-        {
-            'id': p.id,
-            'name': p.name,
-            'description': p.description,
-            'expertise': p.expertise,
-            'personality_traits': p.personality_traits,
-            'interaction_style': p.interaction_style,
-            'helpfulness_level': p.helpfulness_level,
-            'strictness_level': p.strictness_level,
-            'avatar_url': p.avatar_url
-        } for p in personalities
-    ]
-    
-    return jsonify({'personalities': result})
-
-
-@api_bp.route('/questions/<int:question_id>/stream', methods=['GET'])
-def stream_question_updates(question_id):
-    """Stream updates for a question using Server-Sent Events (SSE)"""
-    from flask import Response, stream_with_context
-    import json
-    import time
-    
-    # Check if the question exists
-    question = Question.query.get_or_404(question_id)
-    
-    def generate():
-        # Keep track of the last comment ID we've seen
-        last_comment_id = request.args.get('last_comment_id', 0, type=int)
-        print(f"SSE: Starting stream for question {question_id}, last_comment_id={last_comment_id}")
-        
-        # Keep the connection alive for a reasonable amount of time (5 minutes)
-        end_time = time.time() + 300
-        heartbeat_time = time.time() + 15  # Send heartbeat every 15 seconds
-        
-        while time.time() < end_time:
-            try:
-                # Get new comments for this question
-                new_comments = Comment.query.filter(
-                    Comment.question_id == question_id,
-                    Comment.id > last_comment_id
-                ).order_by(Comment.id.asc()).all()
-                
-                if new_comments:
-                    # Update the last comment ID
-                    last_comment_id = max(comment.id for comment in new_comments)
-                    print(f"SSE: Found {len(new_comments)} new comments, new last_comment_id={last_comment_id}")
-                    
-                    # Prepare comment data
-                    comment_data = []
-                    for comment in new_comments:
-                        # Get the parent comment ID if it exists
-                        parent_id = comment.parent_comment_id
-                        
-                        # Create a comment object with essential data
-                        comment_obj = {
-                            'id': comment.id,
-                            'body': comment.body,
-                            'html_content': comment.html_content,
-                            'score': comment.score,
-                            'created_at': comment.created_at.isoformat(),
-                            'parent_comment_id': parent_id,
-                            'author': {
-                                'username': comment.author.username if comment.author else '[deleted]',
-                                'is_ai': comment.author.is_ai if comment.author else False
-                            }
-                        }
-                        comment_data.append(comment_obj)
-                    
-                    # Send the data as an SSE event
-                    data_json = json.dumps({'comments': comment_data})
-                    print(f"SSE: Sending data: {data_json[:100]}...")  # Print first 100 chars for debugging
-                    yield f"data: {data_json}\n\n"
-                
-                # Send a heartbeat periodically to keep the connection alive
-                if time.time() > heartbeat_time:
-                    yield f"data: {json.dumps({'heartbeat': time.time()})}\n\n"
-                    heartbeat_time = time.time() + 15  # Reset heartbeat timer
-                
-                # Sleep for a bit to avoid hammering the database
-                time.sleep(1)
-            except Exception as e:
-                print(f"SSE: Error in stream: {str(e)}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                time.sleep(5)  # Sleep longer on error
-    
-    return Response(stream_with_context(generate()), 
-                   mimetype='text/event-stream',
-                   headers={
-                       'Cache-Control': 'no-cache',
-                       'X-Accel-Buffering': 'no',  # Disable buffering in Nginx
-                       'Connection': 'keep-alive'
-                   })
-
-
-def determine_vote_type(ai_personality, content):
-    """
-    Determine if an AI personality should upvote (1), downvote (-1), or not vote (0) 
-    based on their personality traits and the content
-    """
-    # By default, AIs tend to be more positive than negative
-    # Higher helpfulness_level means more likely to upvote
-    # Higher strictness_level means more likely to downvote
-    # Start with a base probability of upvoting
-    upvote_probability = 0.7 + (ai_personality.helpfulness_level / 100)
-    
-    # Reduce probability based on strictness
-    upvote_probability -= (ai_personality.strictness_level / 100)
-    
-    # Ensure probability is between 0.1 and 0.9
-    upvote_probability = max(0.1, min(0.9, upvote_probability))
-    
-    # Random choice based on probability
-    import random
-    if random.random() < upvote_probability:
-        return 1  # Upvote
-    else:
-        return -1  # Downvote
-    
-    # Note: We don't return 0 (no vote) as AIs should always have an opinion
-    # This can be modified if we want AIs to sometimes abstain from voting
-
-
-def generate_ai_response(content_type, content_id, ai_personality_id):
-    """Background task to generate an AI response"""
-    try:
-        # Get the content item
-        content_item = None
-        if content_type == 'question':
-            content_item = Question.query.get(content_id)
-        else:  # comment
-            content_item = Comment.query.get(content_id)
-            
-        if not content_item:
-            current_app.logger.warning(f"Content item {content_type}:{content_id} not found")
-            return
-        
-        # If this is a question or a comment on a question that's marked as answered, don't respond
-        if content_type == 'question' and content_item.is_answered:
-            current_app.logger.info(f"Question {content_id} is marked as answered, skipping AI response")
-            return
-        elif content_type == 'comment':
-            # For comments, check if the parent question is marked as answered
-            question = None
-            if content_item.question_id:
-                question = Question.query.get(content_item.question_id)
-            
-            if question and question.is_answered:
-                current_app.logger.info(f"Comment {content_id} belongs to answered question {question.id}, skipping AI response")
-                return
-            
-        # Get the AI personality
-        ai_personality = AIPersonality.query.get(ai_personality_id)
-        if not ai_personality:
-            current_app.logger.warning(f"AI personality {ai_personality_id} not found")
-            return
-            
-        # Get the AI user associated with this personality
-        ai_user = User.query.filter_by(ai_personality_id=ai_personality.id, is_ai=True).first()
-        if not ai_user:
-            current_app.logger.warning(f"AI user for personality {ai_personality_id} not found")
-            return
-        
-        # Check if the AI should respond based on its activity frequency
-        if not ai_personality.should_respond():
-            current_app.logger.info(f"AI {ai_personality.name} decided not to respond to {content_type}:{content_id}")
-            return
-            
-        current_app.logger.info(f"Generating AI response for {content_type}:{content_id} with AI {ai_personality.name}")
-            
-        # Generate the content based on the content type
-        if content_type == 'question':
-            question = Question.query.get(content_id)
-            if question:
-                # Create a rich context with question details and any tags
-                context = f"QUESTION: {question.title}\n\n{question.body}\n\n"
-                
-                # Add tags if available
-                if question.tags:
-                    # Handle QuestionTag objects - need to access the tag attribute first
-                    tags_str = ", ".join([tag.tag.name for tag in question.tags])
-                    context += f"TAGS: {tags_str}\n\n"
-                    
-                # Add existing answers if any (for more coherent thread)
-                existing_answers = []
-                for answer in question.answers:
-                    author = User.query.get(answer.user_id)
-                    author_name = author.username if author else "Unknown User"
-                    is_ai = " (AI)" if author and author.is_ai else ""
-                    existing_answers.append(f"ANSWER by {author_name}{is_ai}: {answer.body}")
-                
-                if existing_answers:
-                    context += "EXISTING ANSWERS:\n" + "\n\n".join(existing_answers)
-                    
-                content = question.body
-                prompt = ai_personality.format_prompt(content, context)
-        else:  # comment
-            if content_item.question_id:
-                # This is a comment on a question (either an answer or a reply to a question)
-                question = Question.query.get(content_item.question_id)
-                if question:
-                    # Build full context with question and comment thread
-                    context = f"QUESTION: {question.title}\n\n{question.body}\n\n"
-                    
-                    # Add tags if available
-                    if question.tags:
-                        tags_str = ", ".join([tag.tag.name for tag in question.tags])
-                        context += f"TAGS: {tags_str}\n\n"
-                    
-                    # Build the comment chain to trace the full conversation
-                    comment_chain = []
-                    current = content_item
-                    
-                    # Traverse up the comment tree
-                    while current:
-                        author = User.query.get(current.user_id)
-                        author_name = author.username if author else "Unknown User"
-                        is_ai = " (AI)" if author and author.is_ai else ""
-                        
-                        comment_chain.append(f"COMMENT by {author_name}{is_ai}: {current.body}")
-                        
-                        if hasattr(current, 'parent_comment_id') and current.parent_comment_id:
-                            current = Comment.query.get(current.parent_comment_id)
-                        else:
-                            break
-                    
-                    # Reverse to get chronological order
-                    comment_chain.reverse()
-                    
-                    context += "CONVERSATION HISTORY:\n" + "\n\n".join(comment_chain)
-                    content = content_item.body
-                    prompt = ai_personality.format_prompt(content, context)
-            else:
-                # This should not happen in the new model, but handle it just in case
-                context = f"COMMENT: {content_item.body}"
-                
-                prompt = ai_personality.format_prompt(content_item.body, context)
-        
-        # Generate AI response
-        response = get_completion(prompt, max_tokens=4096)
-        
-        # Create the appropriate response based on content type
-        result = None
-        if content_type == 'question':
-            # Create a comment as an answer (top-level comment)
-            comment = Comment(
-                body=response,
-                user_id=ai_user.id,
-                question_id=content_item.id
-            )
-            db.session.add(comment)
-            result = comment
-        else:  # comment
-            # Create a reply comment
-            reply = Comment(
-                body=response,
-                user_id=ai_user.id,
-                question_id=content_item.question_id,
-                parent_comment_id=content_item.id
-            )
-            db.session.add(reply)
-            result = reply
-        
-        # Commit the changes
-        db.session.commit()
-        
-        # Add a random vote from the AI on the content
-        vote_type = determine_vote_type(ai_personality, content_item.body)
-        if vote_type != 0:
-            # Check if the user has already voted on this content
-            existing_vote = None
-            
-            if content_type == 'question':
-                existing_vote = Vote.query.filter_by(user_id=ai_user.id, question_id=content_item.id).first()
-            else:  # comment
-                existing_vote = Vote.query.filter_by(user_id=ai_user.id, comment_id=content_item.id).first()
-            
-            # Only create a new vote if one doesn't already exist
-            if not existing_vote:
-                vote = Vote(
-                    user_id=ai_user.id,
-                    vote_type=vote_type
-                )
-                
-                if content_type == 'question':
-                    vote.question_id = content_item.id
-                else:  # comment
-                    vote.comment_id = content_item.id
-                    
-                db.session.add(vote)
-                db.session.commit()
-            elif existing_vote.vote_type != vote_type:
-                # Update the existing vote if the vote type has changed
-                existing_vote.vote_type = vote_type
-                existing_vote.created_at = datetime.utcnow()
-                db.session.commit()
-            
-    except Exception as e:
-        current_app.logger.error(f"Error generating AI response: {str(e)}")
-        db.session.rollback()
+    return jsonify({
+        'tags': [{'id': tag.id, 'name': tag.name} for tag in tags]
+    })

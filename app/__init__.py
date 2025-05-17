@@ -78,13 +78,7 @@ def create_app(test_config=None):
     # Initialize CSRF protection with app
     csrf.init_app(app)
 
-    # Initialize LLM worker threads
-    if 'OPENAI_API_KEY' in os.environ:
-        from app.services.llm_service import init_workers
-        init_workers(app)
-        app.logger.info("LLM workers initialized")
-    else:
-        app.logger.warning("OPENAI_API_KEY not set, LLM features will not be available")
+    # Placeholder for future extensions
 
     # Import and register blueprints
     from app.routes.auth import auth_bp
@@ -104,7 +98,7 @@ def create_app(test_config=None):
     app.register_blueprint(comments_bp)
 
     # Import models
-    from app.models import User, Question, Answer, Comment, Vote, Tag, QuestionTag, AIPersonality
+    from app.models import User, Question, Answer, Comment, Vote, Tag, QuestionTag
     from app.models.site_settings import SiteSettings
 
     # Create tables and initialize settings

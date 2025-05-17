@@ -23,9 +23,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize load more comments
     initializeLoadMoreComments();
     
-    // Initialize AI response functionality
-    initializeAIResponders();
-    
     // Initialize mark as answered functionality
     initializeMarkAsAnswered();
     
@@ -302,144 +299,6 @@ function isUserAuthenticated() {
     return window.appConfig.isAuthenticated;
 }
 
-// Get CSRF token from meta tag
-function getCsrfToken() {
-    return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-}
-
-// Initialize AI responders for questions and comments
-function initializeAIResponders() {
-    const aiResponderButtons = document.querySelectorAll('.ai-responder-button');
-    
-    aiResponderButtons.forEach(button => {
-        button.addEventListener('click', handleAIResponse);
-    });
-    
-    // If there's an AI responder form, set it up
-    const aiResponderForm = document.getElementById('ai-responder-form');
-    if (aiResponderForm) {
-        aiResponderForm.addEventListener('submit', handleAIResponseForm);
-    }
-}
-
-// Handle AI response button click
-function handleAIResponse(e) {
-    e.preventDefault();
-    
-    // Get the AI responder modal
-    const modal = document.getElementById('ai-responder-modal');
-    const bootstrapModal = new bootstrap.Modal(modal);
-    
-    // Update the form with the content details
-    const contentType = e.currentTarget.dataset.contentType;
-    const contentId = e.currentTarget.dataset.contentId;
-    
-    document.getElementById('ai-response-content-type').value = contentType;
-    document.getElementById('ai-response-content-id').value = contentId;
-    
-    // Show the modal
-    bootstrapModal.show();
-}
-
-// Handle AI Response Form Submission
-function handleAIResponseForm(e) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const contentType = form.querySelector('#ai-response-content-type').value;
-    const contentId = form.querySelector('#ai-response-content-id').value;
-    const personalityId = form.querySelector('#ai-response-personality').value;
-    
-    // Show loading state
-    const submitButton = form.querySelector('button[type="submit"]');
-    const originalButtonText = submitButton.innerHTML;
-    submitButton.disabled = true;
-    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
-    
-    // Check if the question is marked as answered
-    const questionAnsweredElement = document.querySelector('meta[name="question-answered"]');
-    if (questionAnsweredElement && questionAnsweredElement.getAttribute('content') === 'true') {
-        showNotification('error', 'This question is marked as answered. AI responses are disabled.');
-        submitButton.disabled = false;
-        submitButton.innerHTML = originalButtonText;
-        $('#ai-response-modal').modal('hide');
-        return;
-    }
-    
-    // Send the request to the API
-    fetch('/api/ai/respond', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
-        },
-        body: JSON.stringify({
-            content_type: contentType,
-            content_id: contentId,
-            personality_id: personalityId
-        })
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || 'Failed to generate AI response');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        // Reset the form and close the modal
-        form.reset();
-        $('#ai-response-modal').modal('hide');
-        
-        // Show success notification
-        showNotification('success', 'AI response generated successfully');
-        
-        // If we're not using SSE for real-time updates, manually add the comment to the page
-        if (!window.EventSource) {
-            addNewCommentToPage(data.response);
-        }
-    })
-    .catch(error => {
-        console.error('Error generating AI response:', error);
-        showNotification('error', error.message);
-    })
-    .finally(() => {
-        // Reset button state
-        submitButton.disabled = false;
-        submitButton.innerHTML = originalButtonText;
-    });
-}
-
-// Add AI response to the page
-function addAIResponseToPage(contentType, contentId, response) {
-    // Find the content container based on type
-    let container;
-    
-    if (contentType === 'question') {
-        container = document.querySelector(`.question-container[data-question-id="${contentId}"] .comments-container`);
-    } else if (contentType === 'comment') {
-        container = document.querySelector(`.comment[id="comment-${contentId}"] .replies`);
-        
-        // If there's no replies container yet, create one
-        if (!container) {
-            const commentEl = document.querySelector(`.comment[id="comment-${contentId}"]`);
-            container = document.createElement('div');
-            container.className = 'replies';
-            commentEl.appendChild(container);
-        }
-    }
-    
-    // If container is found, add the response
-    if (container) {
-        container.insertAdjacentHTML('beforeend', response);
-        
-        // Apply syntax highlighting to any code blocks
-        container.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightBlock(block);
-        });
-    }
-}
-
 // Create HTML for an answer
 function createAnswerHtml(answer) {
     return `
@@ -470,7 +329,6 @@ function createAnswerHtml(answer) {
                         <img src="${answer.author.profile_image || 'https://api.dicebear.com/6.x/identicon/svg?seed=' + answer.author.username}" alt="${answer.author.username}" class="user-image me-2">
                         <div>
                             <span class="fw-bold">${answer.author.username}</span>
-                            ${answer.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
                             <div class="text-muted small">
                                 answered ${new Date(answer.created_at).toLocaleString()}
                             </div>
@@ -511,7 +369,6 @@ function createCommentHtml(comment) {
             </div>
             <div class="comment-meta">
                 – <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
-                ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
                 <span class="text-muted">
                     ${timeSince(createdDate)}
                 </span>
@@ -1118,11 +975,7 @@ function addNewCommentToPage(comment) {
     // Check if the question is marked as answered
     const questionAnsweredElement = document.querySelector('meta[name="question-answered"]');
     if (questionAnsweredElement && questionAnsweredElement.getAttribute('content') === 'true') {
-        console.log('Question is marked as answered, not adding new AI comments');
-        // If this is an AI comment and the question is answered, don't add it
-        if (comment.author && comment.author.is_ai) {
-            return;
-        }
+        console.log('Question is marked as answered');
     }
     
     if (comment.parent_comment_id) {

@@ -42,11 +42,7 @@ class SiteSettings(db.Model):
     @classmethod
     def init_settings(cls):
         """Initialize default settings if they don't exist"""
-        default_settings = {
-            'ai_auto_populate_enabled': ('false', 'Enable automatic AI population of threads'),
-            'ai_auto_populate_max_comments': ('150', 'Maximum number of AI comments per thread'),
-            'ai_auto_populate_personalities': ('7', 'Number of AI personalities to involve per question')
-        }
+        default_settings = {}
         
         for key, (value, description) in default_settings.items():
             setting = cls.query.filter_by(key=key).first()

@@ -71,9 +71,6 @@
                                         <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                         <div>
                                             <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
-                                            {% if question.author.is_ai %}
-                                                <span class="ai-badge">AI</span>
-                                            {% endif %}
                                             <div class="text-muted small">
                                                 <span class="fw-bold">{{ question.author.reputation }}</span> reputation
                                             </div>
@@ -212,9 +209,6 @@
                                     <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="user-image me-2">
                                     <div>
                                         <a href="{{ url_for('auth.profile', username=user.username) }}" class="fw-bold">{{ user.username }}</a>
-                                        {% if user.is_ai %}
-                                            <span class="ai-badge">AI</span>
-                                        {% endif %}
                                         <div class="text-muted small">
                                             <span class="fw-bold">{{ user.tag_score }}</span> score in this tag
                                         </div>

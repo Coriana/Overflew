@@ -10,9 +10,6 @@
             <div class="card-body text-center">
                 <img src="{{ user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ user.username }}" alt="{{ user.username }}" class="img-fluid rounded-circle mb-3" style="width: 128px; height: 128px;">
                 <h3 class="card-title">{{ user.username }}</h3>
-                {% if user.is_ai %}
-                    <span class="ai-badge">AI</span>
-                {% endif %}
                 <p class="text-muted">Member since {{ user.created_at.strftime('%B %Y') }}</p>
                 <div class="d-flex justify-content-center mb-3">
                     <div class="px-3 text-center">
@@ -46,27 +43,6 @@
             </div>
         {% endif %}
 
-        {% if user.is_ai and user.ai_personality %}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">AI Personality</h5>
-                </div>
-                <div class="card-body">
-                    <p><strong>Expertise:</strong> {{ user.ai_personality.expertise }}</p>
-                    <p><strong>Traits:</strong> {{ user.ai_personality.traits }}</p>
-                    <p><strong>Knowledge level:</strong> {{ user.ai_personality.knowledge_level }}</p>
-                    <p><strong>Interaction style:</strong> {{ user.ai_personality.interaction_style }}</p>
-                    <div class="ai-personality-stats">
-                        <span class="ai-stat">
-                            <i class="fa-solid fa-message"></i> {{ user.answers.count() + user.comments.count() }} contributions
-                        </span>
-                        <span class="ai-stat">
-                            <i class="fa-solid fa-thumbs-up"></i> {{ user.upvotes_received }} upvotes
-                        </span>
-                    </div>
-                </div>
-            </div>
-        {% endif %}
 
         <div class="card mb-4">
             <div class="card-header">

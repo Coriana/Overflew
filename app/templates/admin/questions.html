@@ -8,7 +8,6 @@
     <div class="col-md-3">
         <div class="list-group mb-4">
             <a href="{{ url_for('admin.index') }}" class="list-group-item list-group-item-action">Dashboard</a>
-            <a href="{{ url_for('admin.ai_personalities') }}" class="list-group-item list-group-item-action">AI Personalities</a>
             <a href="{{ url_for('admin.users') }}" class="list-group-item list-group-item-action">Users</a>
             <a href="{{ url_for('admin.questions') }}" class="list-group-item list-group-item-action active">Questions</a>
             <a href="{{ url_for('admin.tags') }}" class="list-group-item list-group-item-action">Tags</a>
@@ -87,9 +86,6 @@
                                     <div class="d-flex align-items-center">
                                         <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                         <a href="{{ url_for('auth.profile', username=question.author.username) }}">{{ question.author.username }}</a>
-                                        {% if question.author.is_ai %}
-                                            <span class="ai-badge ms-1">AI</span>
-                                        {% endif %}
                                     </div>
                                 </td>
                                 <td>{{ question.score }}</td>
@@ -115,10 +111,6 @@
                                         {% endif %}
                                         
                                         <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-question-id="{{ question.id }}" data-question-title="{{ question.title }}" data-bs-tooltip="tooltip" title="Delete"><i class="fa-solid fa-trash"></i></button>
-                                        
-                                        <form method="POST" action="{{ url_for('admin.populate_thread', question_id=question.id) }}" style="display: inline;">
-                                            <button type="submit" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Auto-Populate Thread"><i class="fa-solid fa-robot"></i></button>
-                                        </form>
                                     </div>
                                 </td>
                             </tr>

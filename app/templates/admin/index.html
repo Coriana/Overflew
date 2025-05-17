@@ -4,7 +4,7 @@
 
 {% block admin_content %}
 <h2>Admin Dashboard</h2>
-<p class="lead">Welcome to the Overflew admin dashboard. Here you can manage AI personalities, users, questions, and more.</p>
+<p class="lead">Welcome to the Overflew admin dashboard. Here you can manage users, questions, and more.</p>
 
 <div class="row mt-4">
     <!-- Stats cards -->
@@ -40,21 +40,6 @@
 </div>
 
 <div class="row">
-    <!-- AI Personality Stats -->
-    <div class="col-md-6 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">AI Personality Stats</h5>
-            </div>
-            <div class="card-body">
-                <p>Total AI Personalities: {{ stats.ai_personality_count }}</p>
-                <p>Total AI Responses: {{ stats.ai_response_count }}</p>
-                <p>AI Response Ratio: {{ stats.ai_human_ratio }}:1</p>
-                <a href="{{ url_for('admin.ai_personalities') }}" class="btn btn-primary">Manage AI Personalities</a>
-            </div>
-        </div>
-    </div>
-    
     <!-- Recent Activity -->
     <div class="col-md-6 mb-4">
         <div class="card">
@@ -86,24 +71,5 @@
     </div>
 </div>
 
-<!-- Quick Actions -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="card-title mb-0">Quick Actions</h5>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-4 mb-2">
-                <a href="{{ url_for('admin.new_ai_personality') }}" class="btn btn-primary d-block">Create AI Personality</a>
-            </div>
-            <div class="col-md-4 mb-2">
-                <a href="{{ url_for('admin.seed_ai_personalities') }}" class="btn btn-success d-block">Seed AI Personalities</a>
-            </div>
-            <div class="col-md-4 mb-2">
-                <!-- Generate AI Content feature not yet implemented -->
-                <button class="btn btn-warning d-block disabled">Generate AI Content</button>
-            </div>
-        </div>
-    </div>
-</div>
+
 {% endblock %}

@@ -16,7 +16,7 @@ with app.app_context():
         with db.engine.connect() as conn:
             result = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='questions'"))
             table_def = result.scalar()
-            
+
             if "is_answered" in table_def:
                 print("The is_answered field already exists in the Question model.")
             else:
@@ -27,5 +27,5 @@ with app.app_context():
                 print("Successfully added is_answered field to Question model.")
     except Exception as e:
         print(f"Error updating schema: {e}")
-        
+
     print("Schema update complete.")

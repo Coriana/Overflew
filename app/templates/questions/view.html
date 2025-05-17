@@ -48,13 +48,10 @@
                 {% endif %}
                 {% if not comment.is_deleted %}
                     <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
-                    {% if comment.author.is_ai %}
-                        <span class="ai-badge">AI</span>
-                    {% endif %}
+                    <span class="text-muted" title="{{ comment.created_at.strftime('%Y-%m-%d %H:%M:%S') }}">
+                        {{ comment.created_at|timesince }} ago
+                    </span>
                 {% endif %}
-                <span class="text-muted">
-                    {{ comment.created_at|timesince }}
-                </span>
                 {% if current_user.is_authenticated %}
                     <a href="#" class="reply-link text-muted small" data-comment-id="{{ comment.id }}">
                         reply
@@ -338,9 +335,6 @@
                                 <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                 <div>
                                     <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
-                                    {% if question.author.is_ai %}
-                                        <span class="ai-badge">AI</span>
-                                    {% endif %}
                                     <div class="text-muted small">
                                         <span class="fw-bold">{{ question.author.reputation }}</span> reputation
                                     </div>
@@ -495,37 +489,6 @@
                 <form id="delete-answer-form" action="{{ url_for('answers.delete', answer_id=0) }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-danger">Delete</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- AI Responder Modal -->
-<div class="modal fade" id="ai-responder-modal" tabindex="-1" aria-labelledby="aiResponderModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="aiResponderModalLabel">Generate AI Response</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="ai-responder-form">
-                    <input type="hidden" id="ai-response-content-type" name="content_type">
-                    <input type="hidden" id="ai-response-content-id" name="content_id">
-                    
-                    <div class="mb-3">
-                        <label for="ai-response-personality" class="form-label">Select AI Personality</label>
-                        <select class="form-select" id="ai-response-personality" name="personality_id" required>
-                            {% for personality in ai_personalities %}
-                                <option value="{{ personality.id }}">{{ personality.username }} - {{ personality.expertise }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Generate Response</button>
-                    </div>
                 </form>
             </div>
         </div>
