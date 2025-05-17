@@ -202,8 +202,30 @@ def tags():
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today - timedelta(days=today.weekday())
     
-    tags = Tag.query.all()
-    return render_template('main/tags.html', tags=tags, today=today, week_start=week_start, Question=Question)
+    # Query tags with question count using proper joins
+    tags = db.session.query(
+        Tag,
+        func.count(QuestionTag.question_id).label('question_count'),
+        func.count(case(
+            (Question.created_at >= today, 1)
+        )).label('today_count'),
+        func.count(case(
+            (Question.created_at >= week_start, 1)
+        )).label('week_count')
+    ).outerjoin(
+        QuestionTag, Tag.id == QuestionTag.tag_id
+    ).outerjoin(
+        Question, QuestionTag.question_id == Question.id
+    ).group_by(
+        Tag.id
+    ).order_by(
+        Tag.name
+    ).all()
+    
+    return render_template('main/tags.html', 
+                         tags=tags, 
+                         today=today, 
+                         week_start=week_start)
 
 
 @main_bp.route('/tag/<string:tag_name>')

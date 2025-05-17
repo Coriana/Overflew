@@ -20,7 +20,7 @@
         <!-- Tags -->
         {% if tags %}
             <div class="row">
-                {% for tag in tags %}
+                {% for tag, question_count, today_count, week_count in tags %}
                     <div class="col-md-4 mb-4">
                         <div class="card h-100">
                             <div class="card-body">
@@ -28,7 +28,7 @@
                                     <h5 class="card-title mb-0">
                                         <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
                                     </h5>
-                                    <span class="badge rounded-pill bg-secondary">{{ tag.questions.count() }}</span>
+                                    <span class="badge rounded-pill bg-secondary">{{ question_count }}</span>
                                 </div>
                                 <p class="card-text small">
                                     {% if tag.description %}
@@ -40,12 +40,12 @@
                             </div>
                             <div class="card-footer bg-transparent">
                                 <small class="text-muted">
-                                    {{ tag.questions.count() }} question{{ 's' if tag.questions.count() != 1 }}
-                                    {% if tag.questions.filter(Question.created_at >= today).count() > 0 %}
-                                        • {{ tag.questions.filter(Question.created_at >= today).count() }} today
+                                    {{ question_count }} question{{ 's' if question_count != 1 }}
+                                    {% if today_count > 0 %}
+                                        • {{ today_count }} today
                                     {% endif %}
-                                    {% if tag.questions.filter(Question.created_at >= week_start).count() > 0 %}
-                                        • {{ tag.questions.filter(Question.created_at >= week_start).count() }} this week
+                                    {% if week_count > 0 %}
+                                        • {{ week_count }} this week
                                     {% endif %}
                                 </small>
                             </div>
