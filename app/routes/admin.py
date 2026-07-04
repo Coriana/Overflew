@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from app.models.user import User
 from app.models.question import Question
-from app.models.answer import Answer
 from app.models.tag import Tag, QuestionTag
 from app.models.ai_personality import AIPersonality
 from app.models.comment import Comment
@@ -39,8 +38,11 @@ def index():
     stats = {
         'question_count': Question.query.count(),
         'question_today_count': Question.query.filter(Question.created_at >= today).count(),
-        'answer_count': Answer.query.count(),
-        'answer_today_count': Answer.query.filter(Answer.created_at >= today).count(),
+        'answer_count': Comment.query.filter_by(parent_comment_id=None).count(),
+        'answer_today_count': Comment.query.filter(
+            Comment.parent_comment_id == None,
+            Comment.created_at >= today
+        ).count(),
         'user_count': User.query.count(),
         'user_today_count': User.query.filter(User.created_at >= today).count(),
         'tag_count': Tag.query.count(),
@@ -349,11 +351,12 @@ def questions():
             Question.content.ilike(f'%{search}%')
         ))
     
-    # Apply status filter
+    # Apply status filter (answered = has at least one top-level comment)
+    answered_filter = Question.comments.any(Comment.parent_comment_id == None)
     if status == 'answered':
-        query = query.filter(Question.answers.any())
+        query = query.filter(answered_filter)
     elif status == 'unanswered':
-        query = query.filter(~Question.answers.any())
+        query = query.filter(~answered_filter)
     
     # Apply sorting
     if sort_by == 'newest':
@@ -920,10 +923,18 @@ def settings():
                         request.form.get('ai_auto_populate_max_comments', '150'),
                         'Maximum number of AI comments per thread')
         
-        SiteSettings.set('ai_auto_populate_personalities', 
+        SiteSettings.set('ai_auto_populate_personalities',
                         request.form.get('ai_auto_populate_personalities', '7'),
                         'Number of AI personalities to involve per question')
-        
+
+        SiteSettings.set('ai_auto_populate_answers',
+                        request.form.get('ai_auto_populate_answers', '3'),
+                        'Number of distinct AI answers to aim for per question')
+
+        SiteSettings.set('ai_auto_populate_rounds',
+                        request.form.get('ai_auto_populate_rounds', '2'),
+                        'Number of AI discussion rounds per thread')
+
         # Standard prompt template
         SiteSettings.set('ai_standard_prompt_template',
                         form.ai_standard_prompt_template.data,
@@ -936,7 +947,9 @@ def settings():
     settings = {
         'ai_auto_populate_enabled': SiteSettings.get('ai_auto_populate_enabled', False),
         'ai_auto_populate_max_comments': SiteSettings.get('ai_auto_populate_max_comments', 150),
-        'ai_auto_populate_personalities': SiteSettings.get('ai_auto_populate_personalities', 7)
+        'ai_auto_populate_personalities': SiteSettings.get('ai_auto_populate_personalities', 7),
+        'ai_auto_populate_answers': SiteSettings.get('ai_auto_populate_answers', 3),
+        'ai_auto_populate_rounds': SiteSettings.get('ai_auto_populate_rounds', 2)
     }
     
     # Set the standard prompt template in the form

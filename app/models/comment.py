@@ -11,7 +11,6 @@ class Comment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
     parent_comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
-    answer_id = db.Column(db.Integer, db.ForeignKey('answers.id'), nullable=True)  # Temporary field for migration
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_deleted = db.Column(db.Boolean, default=False)
@@ -24,12 +23,11 @@ class Comment(db.Model):
     # The User model defines the relationship with backref='author', so we need to access it that way
     # The Question model defines the relationship with backref='question', so no need to define it here
 
-    def __init__(self, body, user_id, question_id=None, parent_comment_id=None, answer_id=None):
+    def __init__(self, body, user_id, question_id=None, parent_comment_id=None):
         self.body = body
         self.user_id = user_id
         self.question_id = question_id
         self.parent_comment_id = parent_comment_id
-        self.answer_id = answer_id
         self.is_deleted = False
         self.is_accepted = False
 

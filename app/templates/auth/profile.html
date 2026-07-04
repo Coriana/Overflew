@@ -165,7 +165,7 @@
                                     </h5>
                                 </div>
                                 <div class="answer-excerpt">
-                                    {{ answer.body_html|safe|truncate(200) }}
+                                    {{ answer.html_content|safe|truncate(200) }}
                                 </div>
                                 <div class="answer-meta text-muted small">
                                     answered {{ answer.created_at|timesince }}

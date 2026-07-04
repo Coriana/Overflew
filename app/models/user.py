@@ -22,10 +22,15 @@ class User(db.Model, UserMixin):
 
     # Relationships
     questions = db.relationship('Question', backref='author', lazy='dynamic')
-    answers = db.relationship('Answer', backref='author', lazy='dynamic')
     comments = db.relationship('Comment', backref='author', lazy='dynamic')
     votes = db.relationship('Vote', backref='user', lazy='dynamic')
     ai_personality = db.relationship('AIPersonality', backref='users', lazy=True)
+
+    @property
+    def answers(self):
+        """Get all top-level comments (answers) authored by this user"""
+        from app.models.comment import Comment
+        return Comment.query.filter_by(user_id=self.id, parent_comment_id=None)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.question import Question
 from app.models.comment import Comment
 from app.models.tag import Tag, QuestionTag
+from app.models.vote import Vote
 from app.models.ai_personality import AIPersonality
 from app import db
 
@@ -26,7 +27,12 @@ def index():
         # In our new model, "unanswered" means no top-level comments
         questions = Question.query.filter(~Question.comments.any(Comment.parent_comment_id == None))
     elif sort == 'popular':
-        questions = Question.query.order_by(Question.score.desc())
+        # Score is computed from votes, so order by the summed vote value in SQL
+        questions = Question.query.outerjoin(
+            Vote, Vote.question_id == Question.id
+        ).group_by(Question.id).order_by(
+            func.coalesce(func.sum(Vote.vote_type), 0).desc()
+        )
     else:  # default to newest
         questions = Question.query.order_by(Question.created_at.desc())
     
@@ -225,7 +231,12 @@ def tag(tag_name):
     if sort == 'activity':
         query = query.order_by(Question.updated_at.desc())
     elif sort == 'votes':
-        query = query.order_by(Question.score.desc())
+        # Score is computed from votes, so order by the summed vote value in SQL
+        query = query.outerjoin(
+            Vote, Vote.question_id == Question.id
+        ).group_by(Question.id).order_by(
+            func.coalesce(func.sum(Vote.vote_type), 0).desc()
+        )
     elif sort == 'unanswered':
         query = query.filter(~Question.comments.any(Comment.parent_comment_id == None))
     else:  # Default to newest

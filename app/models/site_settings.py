@@ -46,6 +46,8 @@ class SiteSettings(db.Model):
             'ai_auto_populate_enabled': ('false', 'Enable automatic AI population of threads'),
             'ai_auto_populate_max_comments': ('150', 'Maximum number of AI comments per thread'),
             'ai_auto_populate_personalities': ('7', 'Number of AI personalities to involve per question'),
+            'ai_auto_populate_answers': ('3', 'Number of distinct AI answers to aim for per question'),
+            'ai_auto_populate_rounds': ('2', 'Number of AI discussion rounds per thread'),
             'ai_standard_prompt_template': (
                 """You are {{name}}, an AI assistant with the following traits:
 Description: {{description}}

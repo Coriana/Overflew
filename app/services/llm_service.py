@@ -1,18 +1,10 @@
 import os
-import openai
 import threading
 import queue
 import time
+from openai import OpenAI
 from flask import current_app
 from concurrent.futures import ThreadPoolExecutor
-
-# Configure OpenAI client with environment variables
-openai.api_key = os.environ.get('OPENAI_API_KEY')
-
-# Set base URL if provided in environment
-base_url = os.environ.get('OPENAI_BASE_URL')
-if base_url:
-    openai.api_base = base_url
 
 # Create a ThreadPoolExecutor for concurrent LLM tasks
 # Using ThreadPoolExecutor instead of manual thread management for better performance
@@ -44,33 +36,28 @@ def get_completion(prompt, max_tokens=4096, model=None, api_key=None, base_url=N
     """
     try:
         # Use model from environment or fallback to default
-        model_name = model or os.environ.get('OPENAI_MODEL', 'gpt-3.5-turbo-instruct')
-        
+        model_name = model or os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
+
         # Log the request to help debug
         current_app.logger.info(f"Sending request to LLM with model {model_name}")
-        
+
         # Configure client with custom or default settings
-        client_api_key = api_key or os.environ.get('OPENAI_API_KEY')
-        client_base_url = base_url or os.environ.get('OPENAI_BASE_URL')
-        
-        # Set up the client configuration
-        openai.api_key = client_api_key
-        if client_base_url:
-            openai.api_base = client_base_url
-        
-        # Make API call using the OpenAI API format
-        response = openai.Completion.create(
+        client = OpenAI(
+            api_key=api_key or os.environ.get('OPENAI_API_KEY'),
+            base_url=base_url or os.environ.get('OPENAI_BASE_URL') or None,
+        )
+
+        response = client.chat.completions.create(
             model=model_name,
-            prompt=prompt,
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             n=1,
-            stop=None
         )
-        
-        current_app.logger.info(f"Received response from LLM with {len(response.choices[0].text)} characters")
-        
-        # Return the response text
-        return response.choices[0].text.strip()
+
+        text = (response.choices[0].message.content or '').strip()
+        current_app.logger.info(f"Received response from LLM with {len(text)} characters")
+
+        return text
     except Exception as e:
         current_app.logger.error(f"Error in LLM completion: {str(e)}")
         return f"I apologize, but I'm having trouble generating a response right now."

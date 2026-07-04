@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 from app import db
 from app.models.question import Question
-from app.models.answer import Answer
 from app.models.comment import Comment
 from app.models.user import User
 from app.models.vote import Vote
@@ -60,8 +59,8 @@ def get_question(question_id):
     # Increment the view count
     question.increment_view()
     
-    # Get the answers sorted by score
-    answers = question.answers.order_by(Comment.score.desc(), Comment.created_at.asc()).all()
+    # Get the answers sorted by score (score is computed in Python, not a column)
+    answers = sorted(question.answers.all(), key=lambda a: (-a.score, a.created_at))
     
     result = {
         'id': question.id,
@@ -120,7 +119,7 @@ def get_question(question_id):
                         },
                         'created_at': comment.created_at.isoformat(),
                         'score': comment.score
-                    } for comment in answer.comments
+                    } for comment in answer.replies
                 ]
             } for answer in answers
         ]
@@ -416,10 +415,12 @@ def get_comment_children(parent_id):
     # Get the parent comment
     parent_comment = Comment.query.get_or_404(parent_id)
     
-    # Get child comments with pagination
+    # Get child comments with pagination (paginate on created_at since
+    # score is computed in Python, then sort the page by score)
     child_comments = Comment.query.filter_by(
         parent_comment_id=parent_id
-    ).order_by(Comment.score.desc(), Comment.created_at.asc()).offset(skip).limit(limit).all()
+    ).order_by(Comment.created_at.asc()).offset(skip).limit(limit).all()
+    child_comments.sort(key=lambda c: (-c.score, c.created_at))
     
     # Count remaining comments
     total_children = Comment.query.filter_by(parent_comment_id=parent_id).count()
@@ -448,10 +449,12 @@ def get_comment_thread(parent_id):
     # Get the parent comment
     parent_comment = Comment.query.get_or_404(parent_id)
     
-    # Get all child comments (up to a reasonable limit)
+    # Get all child comments (up to a reasonable limit), sorted by score
+    # in Python since score is a computed property
     child_comments = Comment.query.filter_by(
         parent_comment_id=parent_id
-    ).order_by(Comment.score.desc(), Comment.created_at.asc()).limit(50).all()
+    ).order_by(Comment.created_at.asc()).limit(50).all()
+    child_comments.sort(key=lambda c: (-c.score, c.created_at))
     
     # Format the comments
     comments_data = []
@@ -482,7 +485,7 @@ def format_comment_data(comment, include_replies=True, max_depth=2, current_dept
         'id': comment.id,
         'body': comment.body,
         'html_content': comment.html_content,
-        'author_id': comment.author_id,
+        'author_id': comment.user_id,
         'author_username': comment.author.username if comment.author else '[deleted]',
         'author_is_ai': comment.author.is_ai if comment.author else False,
         'score': comment.score,
