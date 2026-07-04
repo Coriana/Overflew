@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app import db
 from app.models.question import Question
-from app.models.answer import Answer
 from app.models.comment import Comment
 from app.models.tag import Tag, QuestionTag
 from app.models.vote import Vote
@@ -24,8 +23,9 @@ def ask():
     if request.method == 'POST':
         title = request.form.get('title')
         body = request.form.get('body')
-        tags_string = request.form.get('tags')
-        
+        # The tag select posts one value per selected tag
+        tag_names = request.form.getlist('tags')
+
         # Validate input
         if not title or not body:
             flash('Title and body are required', 'danger')
@@ -37,8 +37,8 @@ def ask():
         db.session.flush()  # This gives us the question ID
         
         # Process tags
-        if tags_string:
-            tags = [tag.strip() for tag in tags_string.split(',')]
+        if tag_names:
+            tags = [tag.strip() for tag in tag_names if tag.strip()]
             for tag_name in tags:
                 # Check if tag exists, create if not
                 tag = Tag.query.filter_by(name=tag_name).first()
@@ -53,62 +53,19 @@ def ask():
         
         db.session.commit()
         
-        # Trigger AI responses
-        from app.models.ai_personality import AIPersonality
-        from app.models.user import User
-        
-        # Get AI personalities that are active
-        personalities = AIPersonality.query.filter_by(is_active=True).all()
-        
-        # If no active ones, use any
-        if not personalities:
-            personalities = AIPersonality.query.all()
-            print(f"No active AI personalities found, using any available ({len(personalities)} found)")
-        
-        # If still no personalities, skip AI answer
-        if personalities:
-            # Select a random personality to respond
-            import random
-            personality = random.choice(personalities)
-            print(f"Selected AI personality for initial answer: {personality.name}")
-            
-            # Find the corresponding AI user
-            ai_user = User.query.filter_by(username=personality.name).first()
-            if not ai_user:
-                print(f"Creating AI user for {personality.name}")
-                from werkzeug.security import generate_password_hash
-                ai_user = User(
-                    username=personality.name,
-                    email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
-                    password_hash=generate_password_hash("AI_USER_PASSWORD"),
-                    is_ai=True,
-                    ai_personality_id=personality.id
-                )
-                db.session.add(ai_user)
-                db.session.commit()
-            
-            # Generate AI answer using the selected personality
-            success, message = _generate_ai_answer(question.id, personality.id)
-            if success:
-                flash(message, 'success')
-            else:
-                flash(message, 'warning')
-        else:
-            print("No AI personalities found, skipping initial AI answer")
-        
-        # Check if auto-population is enabled and trigger it if so
+        # Trigger AI responses in the background so posting stays fast.
+        # Auto-populate generates several answers plus a discussion; otherwise
+        # fall back to a single AI answer. New content arrives via the
+        # question's live-update stream.
         from app.models.site_settings import SiteSettings
-        
-        # Use flask.current_app to access the application context
-        from flask import current_app
-        
-        if SiteSettings.get('ai_auto_populate_enabled', False) and not question.is_answered:
+
+        if question.is_answered:
+            print(f"Question {question.id} is marked as answered, skipping AI responses")
+        elif SiteSettings.get('ai_auto_populate_enabled', False):
             print(f"Auto-population is enabled, populating thread for question {question.id}")
-            # Use the LLM worker thread pool to run auto-population in the background
-            from app.services.llm_service import queue_task
             queue_task(auto_populate_thread, question.id, parallel=True)
-        elif question.is_answered:
-            print(f"Question {question.id} is marked as answered, skipping auto-population")
+        else:
+            queue_task(_generate_ai_answer, question.id, parallel=True)
         
         flash('Your question has been posted.', 'success')
         return redirect(url_for('questions.view', question_id=question.id))
@@ -169,15 +126,13 @@ def view(question_id):
     
     # Get AI personalities for the AI responder modal
     from app.models.ai_personality import AIPersonality
-    from app.models.user import User
-    
-    # Get AI users with their personalities
-    ai_users = User.query.filter_by(is_ai=True).all()
-    
-    return render_template('questions/view.html', 
-                          question=question, 
+
+    ai_personalities = AIPersonality.query.filter_by(is_active=True).all()
+
+    return render_template('questions/view.html',
+                          question=question,
                           comments=top_level_comments,
-                          ai_personalities=ai_users)
+                          ai_personalities=ai_personalities)
 
 
 @questions_bp.route('/<int:question_id>/edit', methods=['GET', 'POST'])
@@ -192,6 +147,7 @@ def edit(question_id):
     if request.method == 'POST':
         title = request.form.get('title')
         body = request.form.get('body')
+        # Edit form posts tags as a single comma-separated string
         tags_string = request.form.get('tags')
         
         # Validate input
@@ -411,51 +367,12 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
             else:
                 ai_personality = random.choice(ai_personalities)
         
-        # Get the AI user or create one if it doesn't exist
-        ai_user = User.query.filter_by(username=ai_personality.name).first()
-        if not ai_user:
-            # Create a user for this AI personality
-            ai_user = User(
-                username=ai_personality.name,
-                email=f"{ai_personality.name.lower().replace(' ', '.')}@example.com",
-                is_ai=True,
-                ai_personality_id=ai_personality.id
-            )
-            ai_user.set_password("AIUSER")
-            db.session.add(ai_user)
-            db.session.commit()
-        
-        # Build context with question details
-        context = f"Question Title: {question.title}\n"
-        context += f"Question Body: {question.body}\n"
-        if question.tags:
-            context += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
-        
-        # Format the prompt with the AI personality
-        prompt = ai_personality.format_prompt(
-            content="Please provide a helpful and informative answer to this question.",
-            context=context
-        )
-        
-        # Get completion from LLM with custom settings if available
-        answer_text = get_completion(
-            prompt=prompt, 
-            model=ai_personality.custom_model,
-            api_key=ai_personality.custom_api_key,
-            base_url=ai_personality.custom_base_url
-        )
-        
-        # Create the answer as a comment
-        comment = Comment(
-            body=answer_text,
-            question_id=question.id,
-            user_id=ai_user.id,
-            parent_comment_id=None  # This is a top-level comment
-        )
-        
-        db.session.add(comment)
-        db.session.commit()
-        
+        # Generate the answer as a top-level comment
+        ai_user = _get_or_create_ai_user(ai_personality)
+        comment = _create_ai_answer(ai_user, question)
+        if not comment:
+            return False, "Failed to generate AI answer"
+
         return True, f"AI answer generated successfully by {ai_personality.name}"
     except Exception as e:
         current_app.logger.error(f"Error generating AI answer: {str(e)}")
@@ -766,15 +683,183 @@ def ai_respond_to_comment(comment_id):
         return result
 
 
+def _get_or_create_ai_user(personality):
+    """Get the AI user for a personality, creating it if needed"""
+    ai_user = User.query.filter_by(ai_personality_id=personality.id, is_ai=True).first()
+    if ai_user:
+        return ai_user
+
+    ai_user = User.query.filter_by(username=personality.name).first()
+    if ai_user:
+        return ai_user
+
+    ai_user = User(
+        username=personality.name,
+        email=f"{personality.name.lower().replace(' ', '.')}@overflew.ai",
+        is_ai=True,
+        ai_personality_id=personality.id
+    )
+    ai_user.set_password("AIUSER")
+    db.session.add(ai_user)
+    db.session.commit()
+    return ai_user
+
+
+def _question_context(question):
+    """Build the shared prompt context describing a question"""
+    context = f"Question Title: {question.title}\n"
+    context += f"Question Body: {question.body}\n"
+    if question.tags:
+        context += f"\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
+    return context
+
+
+def _comment_thread_context(comment, max_depth=4):
+    """Build the chain of comments leading to (and including) the given comment"""
+    chain = []
+    node = comment
+    while node and len(chain) < max_depth:
+        chain.append(node)
+        node = node.parent_comment
+    chain.reverse()
+
+    lines = []
+    for node in chain:
+        author = node.author.username if node.author else 'unknown'
+        lines.append(f"{author} wrote:\n{node.body[:1200]}")
+    return "\n\n".join(lines)
+
+
+def _create_ai_answer(ai_user, question):
+    """
+    Generate a top-level answer to a question from an AI user's personality.
+
+    Existing answers are included in the prompt so each personality brings a
+    distinct viewpoint instead of repeating what has already been said.
+
+    Returns:
+        Comment: the created answer, or None on failure
+    """
+    from app.services.llm_service import get_completion
+
+    personality = ai_user.ai_personality
+    if not personality:
+        return None
+
+    context = _question_context(question)
+    existing_answers = question.answers.all()
+    if existing_answers:
+        context += "\n\nAnswers already posted by others:\n"
+        for answer in existing_answers:
+            author = answer.author.username if answer.author else 'unknown'
+            context += f"---\n{author} answered:\n{answer.body[:1500]}\n"
+        instruction = (
+            "Write your own answer to the question above. Bring your distinct perspective: "
+            "cover points the existing answers missed, respectfully disagree where your "
+            "expertise suggests otherwise, and avoid repeating what has already been said."
+        )
+    else:
+        instruction = "Please provide a helpful and informative answer to this question."
+
+    prompt = personality.format_prompt(content=instruction, context=context)
+    answer_text = get_completion(
+        prompt=prompt,
+        model=personality.custom_model,
+        api_key=personality.custom_api_key,
+        base_url=personality.custom_base_url
+    )
+    if not answer_text:
+        return None
+
+    comment = Comment(
+        body=answer_text,
+        user_id=ai_user.id,
+        question_id=question.id,
+        parent_comment_id=None
+    )
+    db.session.add(comment)
+    db.session.commit()
+    return comment
+
+
+def _create_ai_reply(ai_user, parent_comment, stance=None):
+    """
+    Generate a reply to a comment from an AI user's personality.
+
+    Args:
+        stance: 'supportive' or 'critical' to align the reply with a vote the
+                AI just cast, or None for an open-ended reply.
+
+    Returns:
+        Comment: the created reply, or None on failure
+    """
+    from app.services.llm_service import get_completion
+
+    personality = ai_user.ai_personality
+    if not personality:
+        return None
+
+    question = Question.query.get(parent_comment.question_id)
+    if not question:
+        return None
+
+    context = _question_context(question)
+    context += "\n\nDiscussion so far:\n" + _comment_thread_context(parent_comment)
+
+    if stance == 'supportive':
+        instruction = (
+            "You found the last message in the discussion above helpful and upvoted it. "
+            "Write a reply that builds on it: add supporting detail, examples, or "
+            "refinements from your own expertise."
+        )
+    elif stance == 'critical':
+        instruction = (
+            "You found issues with the last message in the discussion above and downvoted it. "
+            "Write a constructive reply that politely points out the problems, corrects them, "
+            "or offers a better alternative. Be respectful."
+        )
+    else:
+        instruction = (
+            "Write a reply to the last message in the discussion above, engaging from your "
+            "own perspective. Agree, disagree, or extend the points as your expertise dictates."
+        )
+
+    prompt = personality.format_prompt(content=instruction, context=context)
+    reply_text = get_completion(
+        prompt=prompt,
+        model=personality.custom_model,
+        api_key=personality.custom_api_key,
+        base_url=personality.custom_base_url
+    )
+    if not reply_text:
+        return None
+
+    reply = Comment(
+        body=reply_text,
+        user_id=ai_user.id,
+        question_id=question.id,
+        parent_comment_id=parent_comment.id
+    )
+    db.session.add(reply)
+    db.session.commit()
+    return reply
+
+
 def auto_populate_thread(question_id, max_comments=None, num_personalities=None):
     """
-    Automatically populate a thread with AI responses
-    
+    Automatically populate a thread with AI activity in two phases:
+
+    1. Several personalities each write their own top-level answer, so the
+       question gets a variety of viewpoints.
+    2. Discussion rounds: personalities read the whole thread (including each
+       other's answers and replies), vote on items they haven't judged yet,
+       and reply - so conversations build on each other across rounds.
+
     Args:
         question_id (int): The ID of the question to populate
-        max_comments (int, optional): Maximum number of comments to generate
+        max_comments (int, optional): Maximum number of AI comments in the thread
         num_personalities (int, optional): Number of AI personalities to involve
-        
+
     Returns:
         tuple: (success, message)
     """
@@ -782,281 +867,136 @@ def auto_populate_thread(question_id, max_comments=None, num_personalities=None)
         from app.models.site_settings import SiteSettings
         from app.models.ai_personality import AIPersonality
         from app.services.llm_service import get_completion
-        
-        # Get the question
+
         question = Question.query.get(question_id)
         if not question:
             return False, "Question not found"
-        
-        # Get settings with defaults
+
         if max_comments is None:
             max_comments = int(SiteSettings.get('ai_auto_populate_max_comments', 150))
-        
         if num_personalities is None:
             num_personalities = int(SiteSettings.get('ai_auto_populate_personalities', 7))
-        
-        # Get active AI personalities
+        target_answers = int(SiteSettings.get('ai_auto_populate_answers', 3))
+        discussion_rounds = int(SiteSettings.get('ai_auto_populate_rounds', 2))
+
         ai_personalities = AIPersonality.query.filter_by(is_active=True).all()
         if not ai_personalities:
             return False, "No active AI personalities found"
-        
-        # Select a subset of personalities to involve in this thread
+
         if len(ai_personalities) > num_personalities:
             selected_personalities = random.sample(ai_personalities, num_personalities)
         else:
-            selected_personalities = ai_personalities
-        
-        # Generate initial AI answers if none exist
-        answers = Answer.query.filter_by(question_id=question_id).all()
-        if not answers:
-            # Generate an answer from one of the personalities
-            personality = random.choice(selected_personalities)
-            success, message = _generate_ai_answer(question_id, personality.id)
-            if not success:
-                return False, message
-        
-        # Get all comments for this question
-        all_comments = Comment.query.filter_by(question_id=question_id).all()
-        
-        # Count existing AI comments
-        ai_comment_count = 0
-        for comment in all_comments:
-            if User.query.get(comment.user_id).is_ai:
-                ai_comment_count += 1
-        
-        # Check if we've reached the maximum
-        if ai_comment_count >= max_comments:
-            return True, f"Thread already has {ai_comment_count} AI comments (max: {max_comments})"
-        
-        # Build context with question details
-        context = f"Question Title: {question.title}\n"
-        context += f"Question Body: {question.body}\n"
-        if question.tags:
-            context += f"\n\nTags: {', '.join([tag.tag.name for tag in question.tags])}"
-        
-        # Get all comments and answers to evaluate and possibly respond to
-        items_to_evaluate = []
-        
-        # Add answers to evaluate
-        for answer in answers:
-            items_to_evaluate.append({
-                'type': 'answer',
-                'id': answer.id,
-                'user_id': answer.user_id,
-                'body': answer.body,
-                'created_at': answer.created_at
-            })
-        
-        # Add comments to evaluate
-        for comment in all_comments:
-            items_to_evaluate.append({
-                'type': 'comment',
-                'id': comment.id,
-                'user_id': comment.user_id,
-                'body': comment.body,
-                'parent_id': comment.parent_comment_id,
-                'created_at': comment.created_at
-            })
-        
-        # Sort by creation time
-        items_to_evaluate.sort(key=lambda x: x['created_at'])
-        
-        # For each personality, evaluate and possibly respond to items
+            selected_personalities = list(ai_personalities)
+
+        def ai_comment_count():
+            return Comment.query.join(User, User.id == Comment.user_id).filter(
+                Comment.question_id == question_id, User.is_ai == True
+            ).count()
+
+        # Phase 1: gather a variety of answers, one per personality
         for personality in selected_personalities:
-            # Skip if this personality shouldn't respond based on activity frequency
-            if not personality.should_respond():
+            if ai_comment_count() >= max_comments:
+                break
+            answers_so_far = Comment.query.filter_by(
+                question_id=question_id, parent_comment_id=None
+            ).count()
+            if answers_so_far >= target_answers:
+                break
+
+            ai_user = _get_or_create_ai_user(personality)
+            already_answered = Comment.query.filter_by(
+                question_id=question_id, parent_comment_id=None, user_id=ai_user.id
+            ).first()
+            if already_answered:
                 continue
-                
-            # Get the AI user for this personality
-            ai_user = User.query.filter_by(ai_personality_id=personality.id, is_ai=True).first()
-            if not ai_user:
-                # Create a user for this AI personality
-                ai_user = User(
-                    username=f"ai_{personality.name.lower().replace(' ', '_')}",
-                    email=f"ai_{personality.name.lower().replace(' ', '_')}@example.com",
-                    is_ai=True,
-                    ai_personality_id=personality.id
+
+            answer = _create_ai_answer(ai_user, question)
+            if answer:
+                current_app.logger.info(
+                    f"AI {personality.name} answered question {question_id}"
                 )
-                ai_user.set_password("AIUSER")
-                db.session.add(ai_user)
-                db.session.commit()
-            
-            # For each item, decide whether to vote and/or reply
-            for item in items_to_evaluate:
-                # Skip if the item was created by this AI
-                if item['user_id'] == ai_user.id:
+
+        # Reply probability by nesting depth; deeper threads taper off
+        reply_chance_by_depth = {0: 0.7, 1: 0.5, 2: 0.3}
+
+        # Phase 2: discussion rounds over the whole thread
+        for round_number in range(discussion_rounds):
+            if question.is_answered:
+                break
+
+            comments = Comment.query.filter_by(question_id=question_id).order_by(
+                Comment.created_at
+            ).all()
+
+            depth_by_id = {}
+            for comment in comments:
+                if comment.parent_comment_id is None:
+                    depth_by_id[comment.id] = 0
+                else:
+                    depth_by_id[comment.id] = depth_by_id.get(comment.parent_comment_id, 0) + 1
+
+            random.shuffle(selected_personalities)
+            for personality in selected_personalities:
+                if not personality.should_respond():
                     continue
-                
-                # 90% chance to evaluate the item
-                if random.random() < 0.9:
-                    # Determine whether to upvote or downvote based on content quality
-                    if item['type'] == 'answer':
-                        prompt = f"""
-                        You are {personality.name}, an AI with the following traits:
-                        - Expertise: {personality.expertise}
-                        - Personality: {personality.personality_traits}
-                        - Interaction Style: {personality.interaction_style}
-                        
-                        Please evaluate the following answer to a question. Consider its quality, accuracy, helpfulness, and clarity.
-                        
-                        {context}
-                        
-                        Answer: {item['body']}
-                        
-                        Based on your evaluation, should this answer be upvoted or downvoted?
-                        Respond with either "UPVOTE" or "DOWNVOTE" followed by your reasoning.
-                        """
-                    else:  # comment
-                        prompt = f"""
-                        You are {personality.name}, an AI with the following traits:
-                        - Expertise: {personality.expertise}
-                        - Personality: {personality.personality_traits}
-                        - Interaction Style: {personality.interaction_style}
-                        
-                        Please evaluate the following comment. Consider its quality, relevance, helpfulness, and clarity.
-                        
-                        {context}
-                        
-                        Comment: {item['body']}
-                        
-                        Based on your evaluation, should this comment be upvoted or downvoted?
-                        Respond with either "UPVOTE" or "DOWNVOTE" followed by your reasoning.
-                        """
-                    
-                    # Format the prompt with the AI personality
-                    formatted_prompt = personality.format_prompt(
-                        content=prompt,
-                        context=""
+                ai_user = _get_or_create_ai_user(personality)
+
+                for comment in comments:
+                    if comment.user_id == ai_user.id:
+                        continue
+                    if ai_comment_count() >= max_comments:
+                        db.session.commit()
+                        return True, f"Generated AI activity (comment cap of {max_comments} reached)"
+
+                    # Already judged this item in an earlier round
+                    if Vote.query.filter_by(user_id=ai_user.id, comment_id=comment.id).first():
+                        continue
+
+                    # Sit some items out so participation feels organic
+                    if random.random() > 0.9:
+                        continue
+
+                    item_label = 'answer' if comment.parent_comment_id is None else 'comment'
+                    eval_prompt = personality.format_prompt(
+                        content=(
+                            f"Evaluate the following {item_label} for quality, accuracy, "
+                            f"helpfulness, and clarity.\n\n"
+                            f"{item_label.capitalize()}: {comment.body[:2000]}\n\n"
+                            'Based on your evaluation, should it be upvoted or downvoted? '
+                            'Respond with either "UPVOTE" or "DOWNVOTE" followed by your reasoning.'
+                        ),
+                        context=_question_context(question)
                     )
-                    
-                    # Get completion from LLM with custom settings if available
                     response = get_completion(
-                        prompt=formatted_prompt,
+                        prompt=eval_prompt,
                         model=personality.custom_model,
                         api_key=personality.custom_api_key,
                         base_url=personality.custom_base_url
                     )
-                    
-                    # Determine the vote direction from the response
-                    vote_direction = 1  # Default to upvote
+
+                    vote_direction = 1
                     if response and "DOWNVOTE" in response.upper().split("\n")[0]:
                         vote_direction = -1
-                    
-                    # Log the decision
-                    current_app.logger.info(f"AI {personality.name} decided to {'downvote' if vote_direction == -1 else 'upvote'} {item['type']} {item['id']}")
-                    current_app.logger.info(f"Reasoning: {response}")
-                    
-                    # Check if a vote already exists
-                    if item['type'] == 'answer':
-                        existing_vote = Vote.query.filter_by(
-                            user_id=ai_user.id,
-                            answer_id=item['id']
-                        ).first()
-                    else:  # comment
-                        existing_vote = Vote.query.filter_by(
-                            user_id=ai_user.id,
-                            comment_id=item['id']
-                        ).first()
-                    
-                    # Update or create the vote
-                    if existing_vote:
-                        existing_vote.vote_type = vote_direction
-                    else:
-                        # Create a new vote
-                        vote = Vote(
-                            user_id=ai_user.id,
-                            vote_type=vote_direction
-                        )
-                        
-                        if item['type'] == 'answer':
-                            vote.answer_id = item['id']
-                        else:  # comment
-                            vote.comment_id = item['id']
-                        
-                        db.session.add(vote)
-                    
-                    # 70% chance to reply to the item
-                    if random.random() < 0.7:
-                        # Generate a reply based on the content
-                        if vote_direction == 1:  # Upvote
-                            reply_prompt = f"""
-                            You are {personality.name}, an AI with the following traits:
-                            - Expertise: {personality.expertise}
-                            - Personality: {personality.personality_traits}
-                            - Interaction Style: {personality.interaction_style}
-                            
-                            You just upvoted the following {item['type']}. 
-                            Write a reply that expands on the {item['type']}, adds additional information, 
-                            or supports the points made. Be constructive and helpful.
-                            
-                            {context}
-                            
-                            {item['type'].capitalize()}: {item['body']}
-                            
-                            Your reply:
-                            """
-                        else:  # Downvote
-                            reply_prompt = f"""
-                            You are {personality.name}, an AI with the following traits:
-                            - Expertise: {personality.expertise}
-                            - Personality: {personality.personality_traits}
-                            - Interaction Style: {personality.interaction_style}
-                            
-                            You just downvoted the following {item['type']} because you found issues with it. 
-                            Write a constructive reply that politely points out the issues, provides corrections, 
-                            or offers a better alternative. Be respectful and helpful.
-                            
-                            {context}
-                            
-                            {item['type'].capitalize()}: {item['body']}
-                            
-                            Your reply:
-                            """
-                        
-                        # Format the prompt with the AI personality
-                        formatted_reply_prompt = personality.format_prompt(
-                            content=reply_prompt,
-                            context=""
-                        )
-                        
-                        # Get completion from LLM with custom settings if available
-                        reply_text = get_completion(
-                            prompt=formatted_reply_prompt,
-                            model=personality.custom_model,
-                            api_key=personality.custom_api_key,
-                            base_url=personality.custom_base_url
-                        )
-                        
-                        # Create the reply
-                        if item['type'] == 'answer':
-                            # Create a comment on the answer
-                            reply = Comment(
-                                body=reply_text,
-                                user_id=ai_user.id,
-                                question_id=question_id,
-                                answer_id=item['id']
-                            )
-                        else:  # comment
-                            # Create a reply to the comment
-                            reply = Comment(
-                                body=reply_text,
-                                user_id=ai_user.id,
-                                question_id=question_id,
-                                parent_comment_id=item['id']
-                            )
-                        
-                        db.session.add(reply)
-                        ai_comment_count += 1
-                        
-                        # Check if we've reached the maximum
-                        if ai_comment_count >= max_comments:
-                            db.session.commit()
-                            return True, f"Generated {ai_comment_count} AI comments (max reached)"
-        
-        # Commit all changes
+                    current_app.logger.info(
+                        f"AI {personality.name} {'downvoted' if vote_direction == -1 else 'upvoted'} "
+                        f"{item_label} {comment.id}"
+                    )
+
+                    db.session.add(Vote(
+                        user_id=ai_user.id,
+                        comment_id=comment.id,
+                        vote_type=vote_direction
+                    ))
+                    db.session.commit()
+
+                    reply_chance = reply_chance_by_depth.get(depth_by_id.get(comment.id, 3), 0.0)
+                    if random.random() < reply_chance:
+                        stance = 'supportive' if vote_direction == 1 else 'critical'
+                        _create_ai_reply(ai_user, comment, stance=stance)
+
         db.session.commit()
-        return True, f"Generated {ai_comment_count} AI comments"
-    
+        return True, f"Thread populated with {ai_comment_count()} AI comments"
+
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error in auto_populate_thread: {str(e)}")

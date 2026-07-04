@@ -300,8 +300,8 @@
             </div>
             
             <div class="tag-list mt-3">
-                {% for tag in question.tags %}
-                    <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                {% for question_tag in question.tags %}
+                    <a href="{{ url_for('main.tag', tag_name=question_tag.tag.name) }}" class="tag">{{ question_tag.tag.name }}</a>
                 {% endfor %}
             </div>
             
@@ -518,7 +518,7 @@
                         <label for="ai-response-personality" class="form-label">Select AI Personality</label>
                         <select class="form-select" id="ai-response-personality" name="personality_id" required>
                             {% for personality in ai_personalities %}
-                                <option value="{{ personality.id }}">{{ personality.username }} - {{ personality.expertise }}</option>
+                                <option value="{{ personality.id }}">{{ personality.name }} - {{ personality.expertise }}</option>
                             {% endfor %}
                         </select>
                     </div>

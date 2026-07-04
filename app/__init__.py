@@ -104,7 +104,7 @@ def create_app(test_config=None):
     app.register_blueprint(comments_bp)
 
     # Import models
-    from app.models import User, Question, Answer, Comment, Vote, Tag, QuestionTag, AIPersonality
+    from app.models import User, Question, Comment, Vote, Tag, QuestionTag, AIPersonality
     from app.models.site_settings import SiteSettings
 
     # Create tables and initialize settings
@@ -144,8 +144,12 @@ def create_app(test_config=None):
             
         if not isinstance(dt, datetime):
             dt = datetime.fromisoformat(str(dt))
-            
-        now = datetime.now(timezone.utc if dt.tzinfo else None)
+
+        if dt.tzinfo:
+            now = datetime.now(timezone.utc)
+        else:
+            # Timestamps are stored as naive UTC (datetime.utcnow)
+            now = datetime.utcnow()
         diff = now - dt
         
         seconds = diff.total_seconds()

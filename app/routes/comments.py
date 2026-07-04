@@ -163,11 +163,12 @@ def vote(comment_id):
             vote_type=vote_type
         )
         db.session.add(vote)
-        
+        db.session.commit()  # Commit first so the vote has an id
+
         # Trigger AI response to vote if it's a vote on an answer (top-level comment)
         if comment.parent_comment_id is None:
             queue_task(ai_respond_to_vote, vote.id, parallel=True)
-    
+
     db.session.commit()
     
     return jsonify({'success': True, 'score': comment.score})
