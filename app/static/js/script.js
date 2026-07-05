@@ -34,7 +34,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize notification sound toggle
     initializeNotificationSoundToggle();
-    
+
+    // Initialize AI activity banner polling
+    initializeAIActivityStatus();
+
+    // Initialize "Read more" collapsing for long answer/comment bodies
+    initializeReadMoreCollapsing();
+
     // Comment toggle and sorting functionality
     // Toggle comments visibility
     document.querySelectorAll('.comments-toggle').forEach(toggle => {
@@ -467,10 +473,10 @@ function createAnswerHtml(answer) {
                 </div>
                 <div class="user-info mt-3">
                     <div class="d-flex align-items-center">
-                        <img src="${answer.author.profile_image || 'https://api.dicebear.com/6.x/identicon/svg?seed=' + answer.author.username}" alt="${answer.author.username}" class="user-image me-2">
+                        <img src="${answer.author.profile_image || 'https://api.dicebear.com/6.x/' + (answer.author.is_ai ? 'bottts' : 'identicon') + '/svg?seed=' + answer.author.username}" alt="${answer.author.username}" class="user-image me-2">
                         <div>
                             <span class="fw-bold">${answer.author.username}</span>
-                            ${answer.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                            ${answer.author.is_ai ? '<span class="badge ai-badge" title="AI">AI</span>' : ''}
                             <div class="text-muted small">
                                 answered ${new Date(answer.created_at).toLocaleString()}
                             </div>
@@ -499,8 +505,8 @@ function createCommentHtml(comment) {
     const createdDate = new Date(comment.created_at);
     
     let commentHtml = `
-        <div class="comment" id="comment-${comment.id}" data-score="${comment.score}" data-created="${comment.created_at}">
-            <div class="comment-text">
+        <div class="comment${comment.is_accepted ? ' accepted-answer' : ''}" id="comment-${comment.id}" data-score="${comment.score}" data-created="${comment.created_at}" data-accepted="${comment.is_accepted ? 'true' : 'false'}">
+            <div class="comment-text post-content">
                 ${comment.html_content}
                 <div class="comment-vote float-end">
                     <button class="vote-button" data-vote-type="up" data-comment-id="${comment.id}">
@@ -510,8 +516,9 @@ function createCommentHtml(comment) {
                 </div>
             </div>
             <div class="comment-meta">
+                ${comment.is_accepted ? '<span class="badge accepted-badge"><i class="fa-solid fa-check"></i> Accepted</span>' : ''}
                 – <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
-                ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                ${comment.author.is_ai ? '<span class="badge ai-badge" title="AI">AI</span>' : ''}
                 <span class="text-muted">
                     ${timeSince(createdDate)}
                 </span>
@@ -753,6 +760,51 @@ function showAlert(type, message) {
 
 // Initialize comment sorting functionality
 function initializeCommentSorting() {
+    // Handle the Top / Newest / Oldest / Controversial sort buttons on the question page
+    document.querySelectorAll('.comment-sort').forEach(button => {
+        button.addEventListener('click', function() {
+            const sortType = this.getAttribute('data-sort');
+            const container = document.querySelector('.thread-container');
+            if (!container) return;
+
+            // Mark this button active
+            document.querySelectorAll('.comment-sort').forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+
+            const comments = Array.from(container.querySelectorAll(':scope > .comment-level-0'));
+
+            comments.sort((a, b) => {
+                // Accepted answers always sort first, regardless of chosen sort
+                const acceptedA = a.getAttribute('data-accepted') === 'true';
+                const acceptedB = b.getAttribute('data-accepted') === 'true';
+                if (acceptedA && !acceptedB) return -1;
+                if (acceptedB && !acceptedA) return 1;
+
+                const scoreA = parseInt(a.getAttribute('data-score'), 10) || 0;
+                const scoreB = parseInt(b.getAttribute('data-score'), 10) || 0;
+                const dateA = new Date(a.getAttribute('data-created'));
+                const dateB = new Date(b.getAttribute('data-created'));
+
+                switch (sortType) {
+                    case 'score':
+                        return scoreB - scoreA;
+                    case 'newest':
+                        return dateB - dateA;
+                    case 'oldest':
+                        return dateA - dateB;
+                    case 'controversial':
+                        return Math.abs(scoreA) - Math.abs(scoreB);
+                    default:
+                        return 0;
+                }
+            });
+
+            comments.forEach(comment => {
+                container.appendChild(comment);
+            });
+        });
+    });
+
     document.querySelectorAll('.comment-sort-select').forEach(select => {
         select.addEventListener('change', function() {
             const targetId = this.getAttribute('data-target');
@@ -1145,17 +1197,18 @@ function addNewCommentToPage(comment) {
             commentElement.id = `comment-${comment.id}`;
             commentElement.dataset.score = comment.score;
             commentElement.dataset.created = comment.created_at;
-            
+            commentElement.dataset.accepted = 'false';
+
             // Determine the nesting level
             const parentLevelMatch = parentComment.className.match(/comment-level-(\d+)/);
             const parentLevel = parentLevelMatch ? parseInt(parentLevelMatch[1]) : 0;
             commentElement.classList.add(`comment-level-${parentLevel + 1}`);
-            
+
             // Set the HTML content
             commentElement.innerHTML = `
                 <div class="comment-thread-line"></div>
                 <div class="comment-content">
-                    <div class="comment-text">
+                    <div class="comment-text post-content">
                         ${comment.html_content}
                     </div>
                     <div class="comment-meta">
@@ -1169,7 +1222,7 @@ function addNewCommentToPage(comment) {
                             </button>
                         </div>
                         <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
-                        ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                        ${comment.author.is_ai ? '<span class="badge ai-badge" title="AI">AI</span>' : ''}
                         <span class="text-muted">just now</span>
                         <button class="btn btn-sm btn-link reply-button" data-comment-id="${comment.id}">
                             <i class="fa-solid fa-reply"></i> Reply
@@ -1177,16 +1230,16 @@ function addNewCommentToPage(comment) {
                     </div>
                 </div>
             `;
-            
+
             // Add the comment to the replies container
             repliesContainer.appendChild(commentElement);
-            
+
             // Initialize vote buttons for the new comment
             const voteButtons = commentElement.querySelectorAll('.vote-button');
             voteButtons.forEach(button => {
                 button.addEventListener('click', handleVote);
             });
-            
+
             // Initialize reply button
             const replyButton = commentElement.querySelector('.reply-button');
             if (replyButton) {
@@ -1194,7 +1247,10 @@ function addNewCommentToPage(comment) {
                     showReplyForm(comment.id);
                 });
             }
-            
+
+            // Apply read-more collapsing to the newly inserted content if it's long
+            initializeReadMoreCollapsing(commentElement);
+
             // Play a notification sound if available
             playNotificationSound();
         } else {
@@ -1212,11 +1268,12 @@ function addNewCommentToPage(comment) {
             commentElement.id = `comment-${comment.id}`;
             commentElement.dataset.score = comment.score;
             commentElement.dataset.created = comment.created_at;
-            
+            commentElement.dataset.accepted = 'false';
+
             // Set the HTML content
             commentElement.innerHTML = `
                 <div class="comment-content">
-                    <div class="comment-text">
+                    <div class="comment-text post-content">
                         ${comment.html_content}
                     </div>
                     <div class="comment-meta">
@@ -1230,7 +1287,7 @@ function addNewCommentToPage(comment) {
                             </button>
                         </div>
                         <a href="/profile/${comment.author.username}" class="fw-bold">${comment.author.username}</a>
-                        ${comment.author.is_ai ? '<span class="ai-badge">AI</span>' : ''}
+                        ${comment.author.is_ai ? '<span class="badge ai-badge" title="AI">AI</span>' : ''}
                         <span class="text-muted">just now</span>
                         <button class="btn btn-sm btn-link reply-button" data-comment-id="${comment.id}">
                             <i class="fa-solid fa-reply"></i> Reply
@@ -1238,16 +1295,16 @@ function addNewCommentToPage(comment) {
                     </div>
                 </div>
             `;
-            
+
             // Add the comment to the comments container
             commentsContainer.appendChild(commentElement);
-            
+
             // Initialize vote buttons for the new comment
             const voteButtons = commentElement.querySelectorAll('.vote-button');
             voteButtons.forEach(button => {
                 button.addEventListener('click', handleVote);
             });
-            
+
             // Initialize reply button
             const replyButton = commentElement.querySelector('.reply-button');
             if (replyButton) {
@@ -1255,52 +1312,45 @@ function addNewCommentToPage(comment) {
                     showReplyForm(comment.id);
                 });
             }
-            
+
+            // Apply read-more collapsing to the newly inserted content if it's long
+            initializeReadMoreCollapsing(commentElement);
+
             // Play a notification sound if available
             playNotificationSound();
         } else {
             console.log('Comments container not found, cannot add top-level comment');
         }
     }
-    
+
     // Show a notification for the new comment
     showNotification('info', `New comment from ${comment.author.username}`);
 }
 
 // Initialize the notification sound toggle
+// Default is OFF; the user's choice is persisted in localStorage under 'overflew_sound_enabled'
 function initializeNotificationSoundToggle() {
     const toggle = document.getElementById('notification-sound-toggle');
     if (toggle) {
-        // Check if there's a saved preference
-        const soundEnabled = localStorage.getItem('notification-sound-enabled');
-        if (soundEnabled !== null) {
-            toggle.checked = soundEnabled === 'true';
-        }
-        
-        // Save preference when changed
-        toggle.addEventListener('change', function() {
-            localStorage.setItem('notification-sound-enabled', toggle.checked);
-            
-            // Update the icon based on the toggle state
+        // Check if there's a saved preference; default to off (false) when unset
+        const soundEnabled = localStorage.getItem('overflew_sound_enabled');
+        toggle.checked = soundEnabled === 'true';
+
+        const updateIcon = () => {
             const icon = toggle.nextElementSibling.querySelector('i');
             if (icon) {
-                if (toggle.checked) {
-                    icon.className = 'fa-solid fa-volume-high';
-                } else {
-                    icon.className = 'fa-solid fa-volume-xmark';
-                }
+                icon.className = toggle.checked ? 'fa-solid fa-volume-high' : 'fa-solid fa-volume-xmark';
             }
+        };
+
+        // Save preference when changed
+        toggle.addEventListener('change', function() {
+            localStorage.setItem('overflew_sound_enabled', toggle.checked);
+            updateIcon();
         });
-        
-        // Initialize the icon based on the saved preference
-        const icon = toggle.nextElementSibling.querySelector('i');
-        if (icon && soundEnabled !== null) {
-            if (toggle.checked) {
-                icon.className = 'fa-solid fa-volume-high';
-            } else {
-                icon.className = 'fa-solid fa-volume-xmark';
-            }
-        }
+
+        // Initialize the icon based on the restored preference
+        updateIcon();
     }
 }
 
@@ -1313,4 +1363,111 @@ function playNotificationSound() {
             notificationSound.play().catch(e => console.log('Could not play notification sound', e));
         }
     }
+}
+
+// Poll /api/questions/<id>/ai_status every 5 seconds to show/hide the AI activity banner
+// and keep the "N Answers" header count live while the AI community is active.
+function initializeAIActivityStatus() {
+    const questionIdElement = document.querySelector('meta[name="question-id"]');
+    const banner = document.getElementById('ai-activity-banner');
+    const answersHeader = document.getElementById('answers-header');
+
+    if (!questionIdElement || !banner) {
+        return;
+    }
+
+    const questionId = questionIdElement.getAttribute('content');
+    if (!questionId) {
+        return;
+    }
+
+    let pollTimer = null;
+    let stopped = false;
+
+    function updateAnswersHeader(count) {
+        if (answersHeader && typeof count === 'number') {
+            answersHeader.textContent = `${count} Answer${count === 1 ? '' : 's'}`;
+        }
+    }
+
+    function poll() {
+        fetch(`/api/questions/${questionId}/ai_status`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.active) {
+                banner.classList.remove('d-none');
+                banner.classList.add('d-flex');
+            } else {
+                banner.classList.add('d-none');
+                banner.classList.remove('d-flex');
+            }
+
+            if (typeof data.answer_count === 'number') {
+                updateAnswersHeader(data.answer_count);
+            }
+
+            if (!data.active) {
+                // Do one final poll's worth of work, then stop polling
+                stopped = true;
+                if (pollTimer) {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                }
+            }
+        })
+        .catch(error => {
+            console.log('Could not fetch AI activity status', error);
+        });
+    }
+
+    // Run an initial poll immediately, then every 5 seconds until inactive
+    poll();
+    pollTimer = setInterval(() => {
+        if (stopped) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            return;
+        }
+        poll();
+    }, 5000);
+}
+
+// Collapse long answer/comment bodies with a "Read more" / "Show less" toggle.
+// Applies to any .post-content element taller than 400px. Safe to call multiple
+// times (e.g. after SSE inserts new comments) since it skips already-processed elements.
+function initializeReadMoreCollapsing(root) {
+    const scope = root || document;
+    const COLLAPSE_THRESHOLD = 400;
+
+    scope.querySelectorAll('.post-content:not([data-readmore-init])').forEach(content => {
+        content.setAttribute('data-readmore-init', 'true');
+
+        // Measure natural height before clamping
+        const fullHeight = content.scrollHeight;
+        if (fullHeight <= COLLAPSE_THRESHOLD) {
+            return;
+        }
+
+        content.classList.add('collapsible-content');
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'read-more-toggle';
+        toggle.textContent = 'Read more';
+
+        toggle.addEventListener('click', function() {
+            const expanded = content.classList.toggle('expanded');
+            toggle.textContent = expanded ? 'Show less' : 'Read more';
+        });
+
+        content.insertAdjacentElement('afterend', toggle);
+    });
 }

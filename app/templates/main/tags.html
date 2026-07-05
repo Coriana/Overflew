@@ -99,8 +99,12 @@
                 </nav>
             {% endif %}
         {% else %}
-            <div class="alert alert-info">
-                No tags found. Tags will be created when users ask questions.
+            <div class="card text-center empty-state-card">
+                <div class="card-body py-5">
+                    <i class="fa-solid fa-tags fa-3x text-muted mb-3"></i>
+                    <h4 class="card-title">No tags yet</h4>
+                    <p class="card-text text-muted mb-0">Tags appear when questions are posted.</p>
+                </div>
             </div>
         {% endif %}
     </div>

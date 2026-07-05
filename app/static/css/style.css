@@ -340,12 +340,15 @@ body {
 
 /* AI-related styles */
 .ai-badge {
-    background-color: #9c27b0;
+    background-color: #8e44ec;
     color: white;
     font-size: 0.7rem;
-    padding: 2px 5px;
-    border-radius: 3px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
     margin-left: 5px;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
 }
 
 .ai-user-card {
@@ -419,4 +422,90 @@ body {
     line-clamp: 3;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Empty state cards */
+.empty-state-card {
+    border: 1px dashed #d3d9de;
+    background-color: #fafbfc;
+}
+
+/* Accepted answer highlight */
+.accepted-answer > .comment-content {
+    border-left: 4px solid #2ecc71;
+    background-color: #eefbf3;
+}
+
+.accepted-badge {
+    background-color: #2ecc71;
+    color: white;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-right: 4px;
+}
+
+/* Tame long markdown headings inside rendered comment/answer bodies */
+.post-content h1 {
+    font-size: 1.3rem;
+    margin: 0.6rem 0 0.4rem;
+}
+
+.post-content h2 {
+    font-size: 1.15rem;
+    margin: 0.55rem 0 0.35rem;
+}
+
+.post-content h3 {
+    font-size: 1.05rem;
+    margin: 0.5rem 0 0.3rem;
+}
+
+.post-content h4,
+.post-content h5,
+.post-content h6 {
+    font-size: 1rem;
+    margin: 0.45rem 0 0.3rem;
+}
+
+/* Read-more collapse for long answer/comment bodies */
+.post-content.collapsible-content {
+    position: relative;
+    max-height: 400px;
+    overflow: hidden;
+}
+
+.post-content.collapsible-content::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.95));
+    pointer-events: none;
+}
+
+.post-content.collapsible-content.expanded {
+    max-height: none;
+    overflow: visible;
+}
+
+.post-content.collapsible-content.expanded::after {
+    display: none;
+}
+
+.read-more-toggle {
+    display: inline-block;
+    margin-top: 6px;
+    color: #0a95ff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+.read-more-toggle:hover {
+    text-decoration: underline;
 }

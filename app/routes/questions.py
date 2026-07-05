@@ -16,6 +16,10 @@ import re
 
 questions_bp = Blueprint('questions', __name__, url_prefix='/questions')
 
+# Question IDs currently being populated with AI activity in a background
+# thread. Used by the ai_status API endpoint to let the UI poll for progress.
+_ai_active_questions = set()
+
 
 @questions_bp.route('/ask', methods=['GET', 'POST'])
 @login_required
@@ -59,7 +63,12 @@ def ask():
         # question's live-update stream.
         from app.models.site_settings import SiteSettings
 
-        if question.is_answered:
+        # HTML checkboxes are omitted from the POST entirely when unchecked,
+        # so the "Invite AI answers" checkbox is absent (not "false") if the
+        # user opted out.
+        if request.form.get('ai_response') is None:
+            print(f"AI responses not requested for question {question.id}, skipping")
+        elif question.is_answered:
             print(f"Question {question.id} is marked as answered, skipping AI responses")
         elif SiteSettings.get('ai_auto_populate_enabled', False):
             print(f"Auto-population is enabled, populating thread for question {question.id}")
@@ -78,11 +87,12 @@ def view(question_id):
     question = Question.query.get_or_404(question_id)
     question.increment_view()  # Increment view count
     
-    # Get all top-level comments (both answers and comments) for this question
+    # Get all top-level comments (both answers and comments) for this question,
+    # with accepted answers surfaced first and the newest answers after that
     top_level_comments = Comment.query.filter_by(
-        question_id=question_id, 
+        question_id=question_id,
         parent_comment_id=None
-    ).all()
+    ).order_by(Comment.is_accepted.desc(), Comment.created_at.desc()).all()
     
     # Attach user vote information to question and comments if user is logged in
     if current_user.is_authenticated:
@@ -331,15 +341,16 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
     Returns:
         tuple: (success, message)
     """
+    _ai_active_questions.add(question_id)
     try:
         from app.models.ai_personality import AIPersonality
         from app.services.llm_service import get_completion
-        
+
         # Get the question
         question = Question.query.get(question_id)
         if not question:
             return False, "Question not found"
-        
+
         # Get or select an AI personality
         if ai_personality_id:
             ai_personality = AIPersonality.query.get(ai_personality_id)
@@ -366,7 +377,7 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
                 ai_personality = default_personality
             else:
                 ai_personality = random.choice(ai_personalities)
-        
+
         # Generate the answer as a top-level comment
         ai_user = _get_or_create_ai_user(ai_personality)
         comment = _create_ai_answer(ai_user, question)
@@ -377,6 +388,8 @@ def _generate_ai_answer(question_id, ai_personality_id=None):
     except Exception as e:
         current_app.logger.error(f"Error generating AI answer: {str(e)}")
         return False, f"Error generating AI answer: {str(e)}"
+    finally:
+        _ai_active_questions.discard(question_id)
 
 
 def ai_respond_to_vote(vote):
@@ -863,6 +876,7 @@ def auto_populate_thread(question_id, max_comments=None, num_personalities=None)
     Returns:
         tuple: (success, message)
     """
+    _ai_active_questions.add(question_id)
     try:
         from app.models.site_settings import SiteSettings
         from app.models.ai_personality import AIPersonality
@@ -1001,3 +1015,5 @@ def auto_populate_thread(question_id, max_comments=None, num_personalities=None)
         db.session.rollback()
         current_app.logger.error(f"Error in auto_populate_thread: {str(e)}")
         return False, f"Error populating thread: {str(e)}"
+    finally:
+        _ai_active_questions.discard(question_id)

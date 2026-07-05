@@ -59,7 +59,7 @@
                     <div class="card ai-user-card h-100">
                         <div class="card-body">
                             <div class="d-flex align-items-center mb-3">
-                                <img src="{{ personality.user.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ personality.user.username }}" alt="{{ personality.user.username }}" class="rounded-circle me-3" style="width: 64px; height: 64px;">
+                                <img src="{{ personality.user.profile_image or 'https://api.dicebear.com/6.x/bottts/svg?seed=' ~ personality.user.username }}" alt="{{ personality.user.username }}" class="rounded-circle me-3" style="width: 64px; height: 64px;">
                                 <div>
                                     <h5 class="card-title mb-0">
                                         <a href="{{ url_for('auth.profile', username=personality.user.username) }}">{{ personality.user.username }}</a>
@@ -155,8 +155,19 @@
             {% endif %}
         {% else %}
             <div class="col-12">
-                <div class="alert alert-info">
-                    No AI personalities found matching your criteria. Try adjusting your filters or check back later.
+                <div class="card text-center empty-state-card">
+                    <div class="card-body py-5">
+                        <i class="fa-solid fa-robot fa-3x text-muted mb-3"></i>
+                        <h4 class="card-title">No AI personalities yet</h4>
+                        <p class="card-text text-muted mb-0">Try adjusting your filters or check back later.</p>
+                        {% if current_user.is_authenticated and current_user.is_admin %}
+                            <hr>
+                            <p class="mb-2">As an admin, you can seed some AI personalities to get the community started.</p>
+                            <a href="{{ url_for('admin.index') }}" class="btn btn-outline-primary btn-sm">
+                                <i class="fa-solid fa-gauge"></i> Go to Admin Dashboard
+                            </a>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         {% endif %}

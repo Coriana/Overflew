@@ -44,11 +44,11 @@
                                 <a href="{{ url_for('questions.view', question_id=question.id) }}">{{ question.title }}</a>
                             </h3>
                             <div class="question-excerpt">
-                                {{ question.body_html|safe|truncate(200) }}
+                                {{ question.body|striptags|truncate(200) }}
                             </div>
                             <div class="tag-list">
-                                {% for tag in question.tags %}
-                                    <a href="{{ url_for('main.tag', tag_name=tag.name) }}" class="tag">{{ tag.name }}</a>
+                                {% for question_tag in question.tags %}
+                                    <a href="{{ url_for('main.tag', tag_name=question_tag.tag.name) }}" class="tag">{{ question_tag.tag.name }}</a>
                                 {% endfor %}
                             </div>
                             <div class="question-meta d-flex justify-content-between align-items-center">

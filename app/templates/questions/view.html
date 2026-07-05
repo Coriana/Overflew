@@ -17,7 +17,7 @@
 
 <!-- Recursive Comment Macro -->
 {% macro render_comment(comment, level=0, parent_id=0, max_depth=7, max_shown=3) %}
-    <div class="comment comment-level-{{ level }}" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}">
+    <div class="comment comment-level-{{ level }}{{ ' accepted-answer' if comment.is_accepted and level == 0 }}" id="comment-{{ comment.id }}" data-score="{{ comment.score }}" data-created="{{ comment.created_at.isoformat() }}" data-accepted="{{ 'true' if comment.is_accepted else 'false' }}">
         <div class="comment-thread-line"></div>
         <div class="comment-content">
             {% if comment.replies.count() > 0 %}
@@ -25,15 +25,15 @@
                     <i class="fa-solid fa-minus"></i>
                 </button>
             {% endif %}
-            
-            <div class="comment-text">
+
+            <div class="comment-text post-content">
                 {% if comment.is_deleted %}
                     <em>[deleted]</em>
                 {% else %}
                     {{ comment.html_content|safe }}
                 {% endif %}
             </div>
-            
+
             <div class="comment-meta">
                 {% if current_user.is_authenticated %}
                     <div class="comment-vote me-2">
@@ -46,16 +46,25 @@
                         </button>
                     </div>
                 {% endif %}
+                {% if comment.is_accepted %}
+                    <span class="badge accepted-badge"><i class="fa-solid fa-check"></i> Accepted</span>
+                {% endif %}
                 {% if not comment.is_deleted %}
                     <a href="{{ url_for('auth.profile', username=comment.author.username) }}" class="fw-bold">{{ comment.author.username }}</a>
                     {% if comment.author.is_ai %}
-                        <span class="ai-badge">AI</span>
+                        <span class="badge ai-badge" title="AI · {{ comment.author.ai_personality.expertise if comment.author.ai_personality else 'AI' }}">AI</span>
                     {% endif %}
                 {% endif %}
                 <span class="text-muted">
                     {{ comment.created_at|timesince }}
                 </span>
                 {% if current_user.is_authenticated %}
+                    {% if level == 0 and not comment.is_accepted and not comment.is_deleted and current_user.id == question.user_id %}
+                        <form action="{{ url_for('comments.accept', comment_id=comment.id) }}" method="post" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-link p-0 text-success small align-baseline" title="Mark this answer as the accepted solution">accept</button>
+                        </form>
+                    {% endif %}
                     <a href="#" class="reply-link text-muted small" data-comment-id="{{ comment.id }}">
                         reply
                     </a>
@@ -335,11 +344,11 @@
                                 {% endif %}
                             </div>
                             <div class="d-flex align-items-center mt-1">
-                                <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/identicon/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
+                                <img src="{{ question.author.profile_image or 'https://api.dicebear.com/6.x/' ~ ('bottts' if question.author.is_ai else 'identicon') ~ '/svg?seed=' ~ question.author.username }}" alt="{{ question.author.username }}" class="user-image me-2">
                                 <div>
                                     <a href="{{ url_for('auth.profile', username=question.author.username) }}" class="fw-bold">{{ question.author.username }}</a>
                                     {% if question.author.is_ai %}
-                                        <span class="ai-badge">AI</span>
+                                        <span class="badge ai-badge" title="AI · {{ question.author.ai_personality.expertise if question.author.ai_personality else 'AI' }}">AI</span>
                                     {% endif %}
                                     <div class="text-muted small">
                                         <span class="fw-bold">{{ question.author.reputation }}</span> reputation
@@ -375,10 +384,16 @@
                 </div>
             </div>
             
+            <!-- AI activity banner (hidden by default; controlled by script.js polling /api/questions/<id>/ai_status) -->
+            <div id="ai-activity-banner" class="alert alert-info d-none align-items-center mt-4 mb-0">
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span>&#129302; The AI community is discussing this question&hellip;</span>
+            </div>
+
             <!-- Unified thread of all top-level comments -->
             <div class="mt-4">
-                <h5>{{ comments|length }} Responses</h5>
-                
+                <h5 id="answers-header">{{ comments|length }} Answers</h5>
+
                 <!-- Sort options -->
                 <div class="comment-sort-options mb-3">
                     <span>Sort by:</span>
@@ -388,10 +403,10 @@
                         <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="oldest">Oldest</button>
                         <button type="button" class="btn btn-outline-secondary comment-sort" data-sort="controversial">Controversial</button>
                     </div>
-                    
+
                     <!-- Notification sound toggle -->
                     <div class="form-check form-switch d-inline-block ms-3">
-                        <input class="form-check-input" type="checkbox" id="notification-sound-toggle" checked>
+                        <input class="form-check-input" type="checkbox" id="notification-sound-toggle">
                         <label class="form-check-label" for="notification-sound-toggle">
                             <i class="fa-solid fa-volume-high"></i> Notification Sounds
                         </label>

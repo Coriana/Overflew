@@ -100,7 +100,7 @@
                                 <a href="{{ url_for('questions.view', question_id=question.id) }}">{{ question.title }}</a>
                             </h3>
                             <div class="question-excerpt">
-                                {{ question.body|truncate(200) }}
+                                {{ question.body|striptags|truncate(200) }}
                             </div>
                             <div class="tag-list">
                                 {% for question_tag in question.tags %}

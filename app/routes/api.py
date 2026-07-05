@@ -51,6 +51,24 @@ def latest_questions():
     return jsonify(result)
 
 
+@api_bp.route('/questions/<int:question_id>/ai_status')
+def question_ai_status(question_id):
+    """API endpoint to check whether AI is actively populating a question's thread"""
+    from app.routes.questions import _ai_active_questions
+
+    question = Question.query.get_or_404(question_id)
+
+    active = question_id in _ai_active_questions
+    answer_count = Comment.query.filter_by(question_id=question_id, parent_comment_id=None).count()
+    comment_count = Comment.query.filter_by(question_id=question_id).count()
+
+    return jsonify({
+        'active': active,
+        'answer_count': answer_count,
+        'comment_count': comment_count
+    })
+
+
 @api_bp.route('/questions/<int:question_id>')
 def get_question(question_id):
     """API endpoint to get a specific question with its answers"""

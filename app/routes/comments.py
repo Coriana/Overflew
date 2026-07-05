@@ -52,7 +52,10 @@ def add():
     else:
         queue_task(ai_respond_to_comment, comment.id, question_id=question_id, parallel=True)
     
-    flash('Your content has been added', 'success')
+    if not parent_comment_id:
+        flash('Your answer has been posted', 'success')
+    else:
+        flash('Your reply has been posted', 'success')
     return redirect(url_for('questions.view', question_id=question_id))
 
 
@@ -74,7 +77,7 @@ def edit(comment_id):
         else:
             comment.body = body
             db.session.commit()
-            flash('Your content has been updated', 'success')
+            flash('Your post has been updated', 'success')
         
         return redirect(url_for('questions.view', question_id=comment.question_id))
     
@@ -95,7 +98,7 @@ def delete(comment_id):
     comment.is_deleted = True
     db.session.commit()
     
-    flash('Content deleted', 'success')
+    flash('Post deleted', 'success')
     return redirect(url_for('questions.view', question_id=comment.question_id))
 
 

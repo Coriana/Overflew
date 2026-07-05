@@ -49,24 +49,27 @@
                     
                     <div class="mb-3">
                         <label for="tags" class="form-label">Tags</label>
-                        <select class="form-select select2-tags" id="tags" name="tags" multiple="multiple" required>
+                        {# Tag requirement is enforced by the submit handler below with a visible
+                           message; native 'required' would silently block on the select2-hidden element #}
+                        <select class="form-select select2-tags" id="tags" name="tags" multiple="multiple">
                             {% for tag in available_tags %}
                                 <option value="{{ tag.name }}">{{ tag.name }}</option>
                             {% endfor %}
                         </select>
                         <small class="form-text text-muted">Add up to 5 tags to describe what your question is about. Press Enter or comma to add a new tag.</small>
+                        <div id="tags-error" class="text-danger small mt-1 d-none">Please add at least one tag</div>
                     </div>
-                    
-                    <div class="form-check mb-3">
+
+                    <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="ai_response" name="ai_response" checked>
                         <label class="form-check-label" for="ai_response">
-                            Enable AI community responses
+                            Invite AI answers
                         </label>
                         <small class="form-text text-muted d-block">
-                            If checked, AI personalities with relevant expertise will answer your question.
+                            AI community members will answer and discuss your question
                         </small>
                     </div>
-                    
+
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">Post Your Question</button>
                     </div>
@@ -98,6 +101,94 @@
             placeholder: "Add tags...",
             maximumSelectionLength: 5
         });
+
+        const form = document.querySelector('.card-body form');
+        const titleInput = document.getElementById('title');
+        const bodyInput = document.getElementById('markdown-editor');
+        const tagsSelect = document.getElementById('tags');
+        const tagsError = document.getElementById('tags-error');
+        const DRAFT_KEY = 'overflew_ask_draft';
+
+        // --- Tag validation on submit ---
+        if (form && tagsSelect) {
+            form.addEventListener('submit', function(e) {
+                const selectedTags = $(tagsSelect).val();
+                if (!selectedTags || selectedTags.length === 0) {
+                    e.preventDefault();
+                    tagsError.classList.remove('d-none');
+                    tagsError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return false;
+                }
+                tagsError.classList.add('d-none');
+
+                // Successful submission: clear the saved draft
+                localStorage.removeItem(DRAFT_KEY);
+            });
+
+            // Hide the error as soon as a tag is added
+            $(tagsSelect).on('change', function() {
+                const selectedTags = $(this).val();
+                if (selectedTags && selectedTags.length > 0) {
+                    tagsError.classList.add('d-none');
+                }
+            });
+        }
+
+        // --- Draft persistence ---
+        function saveDraft() {
+            const draft = {
+                title: titleInput ? titleInput.value : '',
+                body: bodyInput ? bodyInput.value : '',
+                tags: tagsSelect ? ($(tagsSelect).val() || []) : []
+            };
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        }
+
+        function debounce(fn, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
+        const debouncedSaveDraft = debounce(saveDraft, 500);
+
+        if (titleInput) {
+            titleInput.addEventListener('input', debouncedSaveDraft);
+        }
+        if (bodyInput) {
+            bodyInput.addEventListener('input', debouncedSaveDraft);
+        }
+        if (tagsSelect) {
+            $(tagsSelect).on('change', debouncedSaveDraft);
+        }
+
+        // Restore draft on load, if present
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (savedDraft) {
+            try {
+                const draft = JSON.parse(savedDraft);
+                if (draft.title && titleInput) {
+                    titleInput.value = draft.title;
+                }
+                if (draft.body && bodyInput) {
+                    bodyInput.value = draft.body;
+                }
+                if (draft.tags && draft.tags.length > 0 && tagsSelect) {
+                    // Add any draft tags that aren't already options, then select them
+                    draft.tags.forEach(function(tagName) {
+                        if (!tagsSelect.querySelector(`option[value="${CSS.escape(tagName)}"]`)) {
+                            const newOption = new Option(tagName, tagName, true, true);
+                            tagsSelect.appendChild(newOption);
+                        }
+                    });
+                    $(tagsSelect).val(draft.tags).trigger('change');
+                }
+            } catch (e) {
+                console.log('Could not restore ask draft', e);
+            }
+        }
     });
 </script>
 {% endblock %}
